@@ -1,20 +1,16 @@
 # ==========================================
-# 1. Build Stage (Cached dependencies)
+# 1. Build Stage (Pre-packaged Maven on Java 21)
 # ==========================================
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
 WORKDIR /app
 
-# Copy Maven descriptor and download dependencies (Cached layer)
+# Cache Maven dependencies
 COPY pom.xml ./
-COPY .mvn .mvn
-COPY mvnw ./
-RUN chmod +x mvnw
-# Download dependencies offline so source changes don't re-download dependencies
-RUN ./mvnw dependency:go-offline -B || true
+RUN mvn dependency:go-offline -B || true
 
-# Copy source and build jar
+# Copy application source and build the JAR
 COPY src ./src
-RUN ./mvnw clean package -DskipTests
+RUN mvn clean package -DskipTests
 
 # ==========================================
 # 2. Lightweight Production Runtime Stage
@@ -22,16 +18,15 @@ RUN ./mvnw clean package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-# Add non-root user for security
+# Add non-root user for container security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 COPY --from=builder /app/target/*.jar app.jar
 
-# Render passes dynamic port via PORT environment variable
+# Render supplies dynamic port via $PORT
 ENV PORT=8080
 ENV SPRING_PROFILES_ACTIVE=prod
 EXPOSE ${PORT}
 
-# Fast start with optimal container memory flags
 ENTRYPOINT ["sh", "-c", "java -XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Dserver.port=${PORT} -jar app.jar"]
