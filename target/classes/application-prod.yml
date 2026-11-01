@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    # Recommended in production: Supabase connection pooler port (6543) or 5432
+    url: ${DATABASE_URL:jdbc:postgresql://db.dhfstnonquoyfgnpswsw.supabase.co:5432/postgres?sslmode=require}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+logging:
+  level:
+    root: INFO
+    com.adrovis.influencer: INFO

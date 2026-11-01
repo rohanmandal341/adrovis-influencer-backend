@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: influencer-core-api
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL:-jdbc:postgresql://db.dhfstnonquoyfgnpswsw.supabase.co:5432/postgres?sslmode=require}
+      - SUPABASE_DB_USER=${SUPABASE_DB_USER:-postgres}
+      - SUPABASE_DB_PASSWORD=${SUPABASE_DB_PASSWORD}
+      - BACKEND_BASE_URL=http://localhost:8080
+    restart: unless-stopped
