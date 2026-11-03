@@ -16,6 +16,17 @@ spring:
       hibernate:
         format_sql: true
 
+# ==========================================
+# 2. NEW CREATOR COLLECTOR DATABASE (SUPABASE)
+# ==========================================
+collector:
+  datasource:
+    # Replace with your Collector Supabase project pooler URL (dxclgwqkxmmxgeyovagd)
+    url: jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
+    username: postgres.dxclgwqkxmmxgeyovagd
+    password: ${COLLECTOR_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
 logging:
   level:
     com.adrovis.influencer: DEBUG

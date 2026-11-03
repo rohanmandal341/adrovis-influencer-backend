@@ -10,11 +10,22 @@ spring:
     password: M@ndal790123789
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: true
     properties:
       hibernate:
         format_sql: true
+
+# ==========================================
+# 2. NEW CREATOR COLLECTOR DATABASE (SUPABASE)
+# ==========================================
+collector:
+  datasource:
+    # Replace with your Collector Supabase project pooler URL (dxclgwqkxmmxgeyovagd)
+    url: jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
+    username: postgres.dxclgwqkxmmxgeyovagd
+    password: TAF?P.n,$3HPy3m
+    driver-class-name: org.postgresql.Driver
 
 logging:
   level:
