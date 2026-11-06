@@ -25,16 +25,21 @@ public class CampaignService {
 
     private final CampaignRepository campaignRepository;
 
-    @Value("${app.backend-base-url:http://localhost:8080}")
+    @Value("${app.backend-base-url:https://adrovis-influencer-backend.onrender.com}")
     private String backendBaseUrl;
 
     @Transactional(readOnly = true)
     public Page<PublicCampaignResponse> getFilteredCampaigns(CampaignFilterRequest filter) {
-        Pageable pageable = PageRequest.of(filter.getPage(), filter.getSize());
+        int page = Math.max(0, filter.getPage() != null ? filter.getPage() : 0);
+        int size = Math.max(1, Math.min(100, filter.getSize() != null ? filter.getSize() : 12));
+        Pageable pageable = PageRequest.of(page, size);
+
         Page<CampaignEntity> entities = campaignRepository.findFilteredCampaigns(
                 filter.getCampaignType(),
                 filter.getMaxFollowers(),
                 filter.getBrand(),
+                filter.getCategory(),
+                filter.getLocation(),
                 filter.getMinPayout(),
                 pageable
         );
@@ -56,7 +61,7 @@ public class CampaignService {
                 .orElseThrow(() -> new ResourceNotFoundException("Campaign not found with ID: " + id));
 
         campaignRepository.incrementClicksCount(id);
-        log.info("Tracked application click for campaign ID: {} (Brand: {})", id, campaign.getBrandName());
+        log.info("Application click recorded for campaign ID: {} (Brand: {})", id, campaign.getBrandName());
         return campaign.getApplicationFormUrl();
     }
 
@@ -67,26 +72,59 @@ public class CampaignService {
             data = Collections.emptyMap();
         }
 
+        // 1. Resolve Images: strictly deduplicated, max 4 images
         List<String> imageUrls = entity.getImages().stream()
                 .map(CampaignImageEntity::getPublicUrl)
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .limit(4)
                 .collect(Collectors.toList());
 
         if (imageUrls.isEmpty() && data.containsKey("images")) {
             Object imgObj = data.get("images");
             if (imgObj instanceof List<?>) {
-                imageUrls = ((List<?>) imgObj).stream().map(Object::toString).collect(Collectors.toList());
+                imageUrls = ((List<?>) imgObj).stream()
+                        .map(Object::toString)
+                        .filter(url -> url != null && !url.isBlank())
+                        .distinct()
+                        .limit(4)
+                        .collect(Collectors.toList());
             }
         }
 
+        // 2. Resolve nested campaign_details (fixes deliverables, categories, adRights, productName)
+        Map<String, Object> campaignDetails = (Map<String, Object>) data.getOrDefault("campaign_details", Collections.emptyMap());
+
+        List<String> deliverables = (List<String>) data.get("deliverables");
+        if (deliverables == null || deliverables.isEmpty()) {
+            deliverables = (List<String>) campaignDetails.getOrDefault("deliverables", Collections.emptyList());
+        }
+
+        List<String> categories = (List<String>) data.get("categories");
+        if (categories == null || categories.isEmpty()) {
+            categories = (List<String>) campaignDetails.getOrDefault("creator_categories", Collections.emptyList());
+        }
+
+        String adRights = (String) data.get("ad_rights");
+        if (adRights == null || adRights.isBlank()) {
+            adRights = (String) campaignDetails.get("ad_rights");
+        }
+
+        String productName = (String) data.get("product_name");
+        if (productName == null || productName.isBlank()) {
+            productName = (String) campaignDetails.get("product_details");
+        }
+
+        // 3. Resolve Compensation & Eligibility
         Map<String, Object> comp = (Map<String, Object>) data.getOrDefault("compensation", Collections.emptyMap());
-        List<String> deliverables = (List<String>) data.getOrDefault("deliverables", Collections.emptyList());
-        List<String> categories = (List<String>) data.getOrDefault("categories", Collections.emptyList());
         Map<String, Object> eligibility = (Map<String, Object>) data.getOrDefault("eligibility", Collections.emptyMap());
         Map<String, Object> schedule = (Map<String, Object>) data.getOrDefault("schedule", Collections.emptyMap());
         List<String> reqs = (List<String>) data.getOrDefault("important_requirements", Collections.emptyList());
         List<String> refs = (List<String>) data.getOrDefault("reference_links", Collections.emptyList());
 
-        String proxyUrl = backendBaseUrl + "/api/v1/campaigns/" + entity.getId() + "/apply";
+        // 4. Dynamic Proxy URL Resolution (Stripping local host and trailing slashes)
+        String baseUrl = backendBaseUrl != null ? backendBaseUrl.replaceAll("/+$", "") : "https://adrovis-influencer-backend.onrender.com";
+        String proxyUrl = baseUrl + "/api/v1/campaigns/" + entity.getId() + "/apply";
 
         return PublicCampaignResponse.builder()
                 .id(entity.getId())
@@ -98,9 +136,9 @@ public class CampaignService {
                 .images(imageUrls)
                 .compensation(comp)
                 .deliverables(deliverables)
-                .adRights((String) data.get("ad_rights"))
+                .adRights(adRights)
                 .categories(categories)
-                .productName((String) data.get("product_name"))
+                .productName(productName)
                 .eligibility(eligibility)
                 .schedule(schedule)
                 .importantRequirements(reqs)

@@ -32,30 +32,48 @@ public interface CampaignRepository extends JpaRepository<CampaignEntity, UUID> 
         SELECT * FROM campaigns c
         WHERE c.is_active = true
           AND (:campaignType IS NULL OR c.campaign_type = :campaignType)
-          AND (:maxFollowers IS NULL OR CAST(c.canonical_data->'eligibility'->>'minimum_followers' AS INTEGER) <= :maxFollowers)
-          AND (:brand IS NULL OR LOWER(c.brand_name) LIKE LOWER(CONCAT('%', :brand, '%')))
+          AND (:maxFollowers IS NULL OR (
+                c.canonical_data->'eligibility'->>'minimum_followers' IS NOT NULL 
+                AND CAST(c.canonical_data->'eligibility'->>'minimum_followers' AS INTEGER) <= :maxFollowers
+              ))
+          AND (:brand IS NULL OR LOWER(c.brand_name) LIKE LOWER(CONCAT('%', :brand, '%')) 
+               OR LOWER(c.campaign_title) LIKE LOWER(CONCAT('%', :brand, '%')))
+          AND (:category IS NULL OR LOWER(CAST(c.canonical_data AS text)) LIKE LOWER(CONCAT('%', :category, '%')))
+          AND (:location IS NULL OR LOWER(CAST(c.canonical_data->'eligibility'->'locations' AS text)) LIKE LOWER(CONCAT('%', :location, '%')))
           AND (:minPayout IS NULL OR (
-                CAST(c.canonical_data->'compensation'->>'payout_amount_inr' AS NUMERIC) >= :minPayout
-                OR CAST(c.canonical_data->'compensation'->'tiers'->0->>'payout' AS NUMERIC) >= :minPayout
+                (c.canonical_data->'compensation'->>'payout_amount_inr' IS NOT NULL 
+                 AND CAST(c.canonical_data->'compensation'->>'payout_amount_inr' AS NUMERIC) >= :minPayout)
+                OR (c.canonical_data->'compensation'->'payout_tiers'->0->>'payout_inr' IS NOT NULL 
+                 AND CAST(c.canonical_data->'compensation'->'payout_tiers'->0->>'payout_inr' AS NUMERIC) >= :minPayout)
               ))
         ORDER BY c.created_at DESC
         """,
-        countQuery = """
+            countQuery = """
         SELECT count(*) FROM campaigns c
         WHERE c.is_active = true
           AND (:campaignType IS NULL OR c.campaign_type = :campaignType)
-          AND (:maxFollowers IS NULL OR CAST(c.canonical_data->'eligibility'->>'minimum_followers' AS INTEGER) <= :maxFollowers)
-          AND (:brand IS NULL OR LOWER(c.brand_name) LIKE LOWER(CONCAT('%', :brand, '%')))
+          AND (:maxFollowers IS NULL OR (
+                c.canonical_data->'eligibility'->>'minimum_followers' IS NOT NULL 
+                AND CAST(c.canonical_data->'eligibility'->>'minimum_followers' AS INTEGER) <= :maxFollowers
+              ))
+          AND (:brand IS NULL OR LOWER(c.brand_name) LIKE LOWER(CONCAT('%', :brand, '%'))
+               OR LOWER(c.campaign_title) LIKE LOWER(CONCAT('%', :brand, '%')))
+          AND (:category IS NULL OR LOWER(CAST(c.canonical_data AS text)) LIKE LOWER(CONCAT('%', :category, '%')))
+          AND (:location IS NULL OR LOWER(CAST(c.canonical_data->'eligibility'->'locations' AS text)) LIKE LOWER(CONCAT('%', :location, '%')))
           AND (:minPayout IS NULL OR (
-                CAST(c.canonical_data->'compensation'->>'payout_amount_inr' AS NUMERIC) >= :minPayout
-                OR CAST(c.canonical_data->'compensation'->'tiers'->0->>'payout' AS NUMERIC) >= :minPayout
+                (c.canonical_data->'compensation'->>'payout_amount_inr' IS NOT NULL 
+                 AND CAST(c.canonical_data->'compensation'->>'payout_amount_inr' AS NUMERIC) >= :minPayout)
+                OR (c.canonical_data->'compensation'->'payout_tiers'->0->>'payout_inr' IS NOT NULL 
+                 AND CAST(c.canonical_data->'compensation'->'payout_tiers'->0->>'payout_inr' AS NUMERIC) >= :minPayout)
               ))
         """,
-        nativeQuery = true)
+            nativeQuery = true)
     Page<CampaignEntity> findFilteredCampaigns(
             @Param("campaignType") String campaignType,
             @Param("maxFollowers") Integer maxFollowers,
             @Param("brand") String brand,
+            @Param("category") String category,
+            @Param("location") String location,
             @Param("minPayout") Double minPayout,
             Pageable pageable
     );

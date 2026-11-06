@@ -1,0 +1,2378 @@
+﻿
+
+==================================================
+FILE: docker-compose.yml
+==================================================
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: influencer-core-api
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL:-jdbc:postgresql://db.dhfstnonquoyfgnpswsw.supabase.co:5432/postgres?sslmode=require}
+      - SUPABASE_DB_USER=${SUPABASE_DB_USER:-postgres}
+      - SUPABASE_DB_PASSWORD=${SUPABASE_DB_PASSWORD}
+      - BACKEND_BASE_URL=http://localhost:8080
+    restart: unless-stopped
+
+
+
+==================================================
+FILE: pom.xml
+==================================================
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.5</version>
+        <relativePath/>
+    </parent>
+    <groupId>com.adrovis</groupId>
+    <artifactId>influencer-core-api</artifactId>
+    <version>1.0.0</version>
+    <name>influencer-core-api</name>
+    <description>Enterprise Core API Service for Influencer Campaign Discovery and Marketing Automation</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <!-- Web & REST -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- JPA & PostgreSQL -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Swagger / OpenAPI UI for Spring Boot 3.x -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.6.0</version>
+        </dependency>
+
+        <!-- Bean Validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Fast Dev Reload (Zero wait during local coding) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Monitoring & Health check for Render / Cloud Deployment -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Lombok for Boilerplate reduction -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+
+
+==================================================
+FILE: README.md
+==================================================
+# Influencer Core API (Spring Boot 3 + Java 21)
+
+Production-ready backend for influencer campaign curation, creator discovery, and marketing automation.
+
+## ðŸš€ Quick Run (Instant Local Dev - Zero Docker Build Wait)
+With Java 21 installed on your Windows machine:
+```powershell
+# 1. Set your database password
+$env:SUPABASE_DB_PASSWORD="your-db-password"
+
+# 2. Run immediately with Spring Boot DevTools live reload
+./mvnw spring-boot:run
+```
+That's it! Any changes you make to Java files or templates automatically hot-reload in under 1 second.
+
+## ðŸ³ Docker Deployment
+To run containerized:
+```bash
+docker compose up --build
+```
+
+## ðŸŒ Deploy to Render
+1. Push this folder to a GitHub repository.
+2. In Render Dashboard, click **New +** -> **Blueprint** or **Web Service**.
+3. Select your repo. Render automatically detects `Dockerfile` and `render.yaml`.
+4. Fill in the environment variables:
+   - `DATABASE_URL`: `jdbc:postgresql://db.dhfstnonquoyfgnpswsw.supabase.co:5432/postgres?sslmode=require`
+   - `DATABASE_USERNAME`: `postgres`
+   - `DATABASE_PASSWORD`: `your-supabase-password`
+   - `BACKEND_BASE_URL`: `https://your-service-name.onrender.com`
+
+
+
+==================================================
+FILE: render.yaml
+==================================================
+services:
+  - type: web
+    name: influencer-core-api
+    runtime: docker
+    plan: free
+    region: singapore # or frankfurt/ohio
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USERNAME
+        value: postgres
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: BACKEND_BASE_URL
+        sync: false # Set to your Render URL e.g. https://influencer-core-api.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: "*"
+    healthCheckPath: /api/v1/health
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\InfluencerApplication.java
+==================================================
+package com.adrovis.influencer;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class InfluencerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(InfluencerApplication.class, args);
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\config\CollectorDbConfig.java
+==================================================
+package com.adrovis.influencer.collector.config;
+
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+import javax.sql.DataSource;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * Secondary DataSource configuration specifically targeting the Creator Collector Supabase project.
+ * All repository calls inside com.adrovis.influencer.collector.repository will route here.
+ */
+@Configuration
+@EnableTransactionManagement
+@EnableJpaRepositories(
+        basePackages = "com.adrovis.influencer.collector.repository",
+        entityManagerFactoryRef = "collectorEntityManagerFactory",
+        transactionManagerRef = "collectorTransactionManager"
+)
+public class CollectorDbConfig {
+
+    @Bean(name = "collectorDataSourceProperties")
+    @ConfigurationProperties("collector.datasource")
+    public DataSourceProperties collectorDataSourceProperties() {
+        return new DataSourceProperties();
+    }
+
+    @Bean(name = "collectorDataSource")
+    public DataSource collectorDataSource(
+            @Qualifier("collectorDataSourceProperties") DataSourceProperties properties) {
+        return properties.initializeDataSourceBuilder().build();
+    }
+
+    @Bean(name = "collectorEntityManagerFactory")
+    public LocalContainerEntityManagerFactoryBean collectorEntityManagerFactory(
+            EntityManagerFactoryBuilder builder,
+            @Qualifier("collectorDataSource") DataSource dataSource) {
+
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("hibernate.hbm2ddl.auto", "none");
+        properties.put("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
+
+        return builder
+                .dataSource(dataSource)
+                .packages("com.adrovis.influencer.collector.entity")
+                .persistenceUnit("collectorPU")
+                .properties(properties)
+                .build();
+    }
+
+    @Bean(name = "collectorTransactionManager")
+    public PlatformTransactionManager collectorTransactionManager(
+            @Qualifier("collectorEntityManagerFactory") LocalContainerEntityManagerFactoryBean factory) {
+        return new JpaTransactionManager(Objects.requireNonNull(factory.getObject()));
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\config\PrimaryDbConfig.java
+==================================================
+package com.adrovis.influencer.collector.config;
+
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+import javax.sql.DataSource;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * Ensures existing entities and repositories under com.adrovis.influencer and com.adrovis.email
+ * remain completely intact as the Primary DataSource without any interference.
+ */
+@Configuration
+@EnableTransactionManagement
+@EnableJpaRepositories(
+        basePackages = {
+                "com.adrovis.influencer.repository",
+                "com.adrovis.email.repository"
+        },
+        entityManagerFactoryRef = "primaryEntityManagerFactory",
+        transactionManagerRef = "primaryTransactionManager"
+)
+public class PrimaryDbConfig {
+
+    @Primary
+    @Bean(name = "primaryDataSourceProperties")
+    @ConfigurationProperties("spring.datasource")
+    public DataSourceProperties primaryDataSourceProperties() {
+        return new DataSourceProperties();
+    }
+
+    @Primary
+    @Bean(name = "primaryDataSource")
+    public DataSource primaryDataSource(
+            @Qualifier("primaryDataSourceProperties") DataSourceProperties properties) {
+        return properties.initializeDataSourceBuilder().build();
+    }
+
+    @Primary
+    @Bean(name = "primaryEntityManagerFactory")
+    public LocalContainerEntityManagerFactoryBean primaryEntityManagerFactory(
+            EntityManagerFactoryBuilder builder,
+            @Qualifier("primaryDataSource") DataSource dataSource) {
+
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("hibernate.hbm2ddl.auto", "validate");
+
+        return builder
+                .dataSource(dataSource)
+                .packages(
+                        "com.adrovis.influencer.entity",
+                        "com.adrovis.email.entity"
+                )
+                .persistenceUnit("primaryPU")
+                .properties(properties)
+                .build();
+    }
+
+    @Primary
+    @Bean(name = "primaryTransactionManager")
+    public PlatformTransactionManager primaryTransactionManager(
+            @Qualifier("primaryEntityManagerFactory") LocalContainerEntityManagerFactoryBean factory) {
+        return new JpaTransactionManager(Objects.requireNonNull(factory.getObject()));
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\controller\CollectorCreatorController.java
+==================================================
+package com.adrovis.influencer.collector.controller;
+
+import com.adrovis.influencer.collector.dto.CreatorFilterRequest;
+import com.adrovis.influencer.collector.dto.CreatorTableResponse;
+import com.adrovis.influencer.collector.entity.CollectorTeamMember;
+import com.adrovis.influencer.collector.repository.CollectorTeamMemberRepository;
+import com.adrovis.influencer.collector.service.CollectorCreatorService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/collector/creators")
+@RequiredArgsConstructor
+@CrossOrigin(origins = "*")
+public class CollectorCreatorController {
+
+    private final CollectorCreatorService creatorService;
+    private final CollectorTeamMemberRepository memberRepo;
+
+    @GetMapping
+    public ResponseEntity<CreatorTableResponse> getCreators(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String niche,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) UUID addedBy,
+            @RequestParam(required = false) String followerRange,
+            @RequestParam(required = false) String timeRange,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+
+        CreatorFilterRequest req = CreatorFilterRequest.builder()
+                .search(search)
+                .niche(niche)
+                .location(location)
+                .addedBy(addedBy)
+                .followerRange(followerRange)
+                .timeRange(timeRange)
+                .page(page)
+                .size(size)
+                .sortBy(sortBy)
+                .sortDir(sortDir)
+                .build();
+
+        return ResponseEntity.ok(creatorService.getCreatorsTable(req));
+    }
+
+    @GetMapping("/export")
+    public ResponseEntity<String> exportCsv(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String niche,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) UUID addedBy,
+            @RequestParam(required = false) String followerRange,
+            @RequestParam(required = false) String timeRange) {
+
+        CreatorFilterRequest req = CreatorFilterRequest.builder()
+                .search(search)
+                .niche(niche)
+                .location(location)
+                .addedBy(addedBy)
+                .followerRange(followerRange)
+                .timeRange(timeRange)
+                .build();
+
+        String csvData = creatorService.exportCreatorsCsv(req);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=creators_export.csv")
+                .contentType(MediaType.parseMediaType("text/csv"))
+                .body(csvData);
+    }
+
+    @GetMapping("/members")
+    public ResponseEntity<List<CollectorTeamMember>> getMembers() {
+        return ResponseEntity.ok(memberRepo.findByActiveTrue());
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\controller\CollectorDashboardController.java
+==================================================
+package com.adrovis.influencer.collector.controller;
+
+import com.adrovis.influencer.collector.dto.DashboardOverviewDto;
+import com.adrovis.influencer.collector.service.CollectorDashboardService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/v1/collector/dashboard")
+@RequiredArgsConstructor
+@CrossOrigin(origins = "*")
+public class CollectorDashboardController {
+
+    private final CollectorDashboardService dashboardService;
+
+    @GetMapping("/overview")
+    public ResponseEntity<DashboardOverviewDto> getOverview(
+            @RequestParam(name = "timeRange", defaultValue = "LAST_7_DAYS") String timeRange) {
+        return ResponseEntity.ok(dashboardService.getOverview(timeRange));
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\dto\CreatorFilterRequest.java
+==================================================
+package com.adrovis.influencer.collector.dto;
+
+import lombok.*;
+
+import java.util.UUID;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CreatorFilterRequest {
+    private String search;
+    private String niche;
+    private String location;
+    private UUID addedBy;
+    private String followerRange; // e.g. "0-10k", "10k-50k", "50k-100k", "100k+"
+    private String timeRange;     // "TODAY", "LAST_7_DAYS", "THIS_MONTH", "ALL"
+    private int page = 0;
+    private int size = 10;
+    private String sortBy = "createdAt";
+    private String sortDir = "desc";
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\dto\CreatorTableResponse.java
+==================================================
+package com.adrovis.influencer.collector.dto;
+
+import lombok.*;
+
+import java.util.List;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CreatorTableResponse {
+    private CreatorStatsBar stats;
+    private List<RecentCreatorDto> items;
+    private int currentPage;
+    private int pageSize;
+    private long totalElements;
+    private int totalPages;
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class CreatorStatsBar {
+        private long totalCreators;
+        private String totalGrowth;
+        private long withEmailCount;
+        private double withEmailPercentage;
+        private long withUsernameCount;
+        private double withUsernamePercentage;
+        private long withLocationCount;
+        private double withLocationPercentage;
+        private int totalNiches;
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\dto\DashboardOverviewDto.java
+==================================================
+package com.adrovis.influencer.collector.dto;
+
+import lombok.*;
+
+import java.util.List;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class DashboardOverviewDto {
+    private KpiMetrics kpis;
+    private TeamGoal teamGoal;
+    private List<TeamMemberRankDto> teamCompetition;
+    private List<TrendDataPointDto> collectionTrend;
+    private List<NicheDistDto> nicheDistribution;
+    private List<LocationInsightDto> locationInsights;
+    private List<RecentCreatorDto> recentCreators;
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class KpiMetrics {
+        private long totalCreators;
+        private String totalCreatorsGrowth; // e.g. "+12.8%"
+        private long uniqueEmails;
+        private String uniqueEmailsGrowth;   // e.g. "+11.4%"
+        private long activeMembers;
+        private long todayTargetProgress;    // e.g. 32
+        private long todayTargetGoal;        // e.g. 50
+        private double todayTargetPercentage; // e.g. 64.0
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class TeamGoal {
+        private long current;
+        private long target;
+        private double percentage;
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\dto\LocationInsightDto.java
+==================================================
+package com.adrovis.influencer.collector.dto;
+
+import lombok.*;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class LocationInsightDto {
+    private String location;
+    private long count;
+    private double percentage;
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\dto\NicheDistDto.java
+==================================================
+package com.adrovis.influencer.collector.dto;
+
+import lombok.*;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class NicheDistDto {
+    private String niche;
+    private long count;
+    private double percentage;
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\dto\RecentCreatorDto.java
+==================================================
+package com.adrovis.influencer.collector.dto;
+
+import lombok.*;
+
+import java.util.UUID;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class RecentCreatorDto {
+    private UUID id;
+    private String username;
+    private String name;
+    private String email;
+    private Long followers;
+    private Long posts;
+    private String niche;
+    private String location;
+    private String addedBy;
+    private String addedByInitials;
+    private String addedAt;
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\dto\TeamMemberRankDto.java
+==================================================
+package com.adrovis.influencer.collector.dto;
+
+import lombok.*;
+
+import java.util.UUID;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class TeamMemberRankDto {
+    private int rank;
+    private UUID memberId;
+    private String name;
+    private String username;
+    private String initials;
+    private long creators;
+    private double progress; // percentage relative to team quota
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\dto\TrendDataPointDto.java
+==================================================
+package com.adrovis.influencer.collector.dto;
+
+import lombok.*;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class TrendDataPointDto {
+    private String date;
+    private long totalCreators;
+    private long uniqueEmails;
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\entity\CollectorCreator.java
+==================================================
+package com.adrovis.influencer.collector.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+@Entity
+@Table(name = "creators")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CollectorCreator {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private UUID id;
+
+    @Column(name = "email", unique = true)
+    private String email;
+
+    @Column(name = "normalized_email")
+    private String normalizedEmail;
+
+    @Column(name = "instagram_username")
+    private String instagramUsername;
+
+    @Column(name = "normalized_username")
+    private String normalizedUsername;
+
+    @Column(name = "full_name")
+    private String fullName;
+
+    @Column(name = "followers")
+    private Long followers;
+
+    @Column(name = "following")
+    private Long following;
+
+    @Column(name = "post_count")
+    private Long postCount;
+
+    @Column(name = "location")
+    private String location;
+
+    @Column(name = "niche", columnDefinition = "TEXT")
+    private String niche;
+
+    @Column(name = "bio", columnDefinition = "TEXT")
+    private String bio;
+
+    @Column(name = "first_added_by")
+    private UUID firstAddedBy;
+
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private OffsetDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private OffsetDateTime updatedAt;
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\entity\CollectorSubmission.java
+==================================================
+package com.adrovis.influencer.collector.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+@Entity
+@Table(name = "creator_submissions")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CollectorSubmission {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private UUID id;
+
+    @Column(name = "team_member_id", nullable = false)
+    private UUID teamMemberId;
+
+    @Column(name = "creator_id")
+    private UUID creatorId;
+
+    @Column(name = "telegram_message_id")
+    private Long telegramMessageId;
+
+    @Column(name = "status")
+    private String status; // "new", "duplicate", "email_not_found"
+
+    @Column(name = "extracted_username")
+    private String extractedUsername;
+
+    @Column(name = "extracted_email")
+    private String extractedEmail;
+
+    @Column(name = "extracted_data", columnDefinition = "TEXT")
+    private String extractedData;
+
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private OffsetDateTime createdAt;
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\entity\CollectorTeamMember.java
+==================================================
+package com.adrovis.influencer.collector.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+@Entity
+@Table(name = "team_members")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CollectorTeamMember {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private UUID id;
+
+    @Column(name = "telegram_user_id", unique = true, nullable = false)
+    private Long telegramUserId;
+
+    @Column(name = "telegram_username")
+    private String telegramUsername;
+
+    @Column(name = "display_name")
+    private String displayName;
+
+    @Column(name = "role")
+    private String role; // "admin", "member"
+
+    @Column(name = "active")
+    private Boolean active;
+
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private OffsetDateTime createdAt;
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\repository\CollectorCreatorRepository.java
+==================================================
+package com.adrovis.influencer.collector.repository;
+
+import com.adrovis.influencer.collector.entity.CollectorCreator;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Repository
+public interface CollectorCreatorRepository extends JpaRepository<CollectorCreator, UUID>, JpaSpecificationExecutor<CollectorCreator> {
+
+    @Query("SELECT COUNT(c) FROM CollectorCreator c")
+    long countTotalCreators();
+
+    @Query("SELECT COUNT(c) FROM CollectorCreator c WHERE c.email IS NOT NULL AND c.email != ''")
+    long countUniqueEmails();
+
+    @Query("SELECT COUNT(c) FROM CollectorCreator c WHERE c.instagramUsername IS NOT NULL AND c.instagramUsername != ''")
+    long countWithUsername();
+
+    @Query("SELECT COUNT(c) FROM CollectorCreator c WHERE c.location IS NOT NULL AND c.location != ''")
+    long countWithLocation();
+
+    @Query("SELECT COUNT(c) FROM CollectorCreator c WHERE c.createdAt >= :startDate")
+    long countCreatedSince(@Param("startDate") OffsetDateTime startDate);
+
+    @Query("SELECT COUNT(c) FROM CollectorCreator c WHERE c.createdAt >= :startDate AND c.createdAt < :endDate")
+    long countCreatedBetween(@Param("startDate") OffsetDateTime startDate, @Param("endDate") OffsetDateTime endDate);
+
+    @Query("SELECT COUNT(c) FROM CollectorCreator c WHERE c.email IS NOT NULL AND c.createdAt >= :startDate")
+    long countEmailsCreatedSince(@Param("startDate") OffsetDateTime startDate);
+
+    @Query("SELECT COUNT(c) FROM CollectorCreator c WHERE c.email IS NOT NULL AND c.createdAt >= :startDate AND c.createdAt < :endDate")
+    long countEmailsCreatedBetween(@Param("startDate") OffsetDateTime startDate, @Param("endDate") OffsetDateTime endDate);
+
+    // Distribution of Niches (PostgreSQL unnest)
+    @Query(value = """
+        SELECT trim(niche_item) AS nicheName, COUNT(*) AS cnt
+        FROM creators c, unnest(string_to_array(c.niche, ',')) AS niche_item
+        WHERE c.niche IS NOT NULL AND trim(niche_item) <> ''
+        GROUP BY trim(niche_item)
+        ORDER BY cnt DESC
+        LIMIT 10
+    """, nativeQuery = true)
+    List<Map<String, Object>> findNicheDistribution();
+
+    // Location Insights (Top Cities)
+    @Query(value = """
+        SELECT location AS locName, COUNT(*) AS cnt
+        FROM creators
+        WHERE location IS NOT NULL AND location <> ''
+        GROUP BY location
+        ORDER BY cnt DESC
+        LIMIT 6
+    """, nativeQuery = true)
+    List<Map<String, Object>> findLocationDistribution();
+
+    // Collection trend over time
+    @Query(value = """
+        SELECT to_char(created_at, 'DD Mon') AS dayLabel,
+               date(created_at) AS rawDate,
+               COUNT(*) AS totalCreators,
+               COUNT(email) AS uniqueEmails
+        FROM creators
+        WHERE created_at >= :startDate
+        GROUP BY dayLabel, rawDate
+        ORDER BY rawDate ASC
+    """, nativeQuery = true)
+    List<Map<String, Object>> findDailyCollectionTrend(@Param("startDate") OffsetDateTime startDate);
+
+    // Recent creators
+    List<CollectorCreator> findTop5ByOrderByCreatedAtDesc();
+    List<CollectorCreator> findTop8ByOrderByCreatedAtDesc();
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\repository\CollectorSubmissionRepository.java
+==================================================
+package com.adrovis.influencer.collector.repository;
+
+import com.adrovis.influencer.collector.entity.CollectorSubmission;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Repository
+public interface CollectorSubmissionRepository extends JpaRepository<CollectorSubmission, UUID> {
+
+    @Query("SELECT COUNT(s) FROM CollectorSubmission s WHERE s.status = 'new' AND s.createdAt >= :startDate")
+    long countNewSubmissionsSince(@Param("startDate") OffsetDateTime startDate);
+
+    // Team Competition Leaderboard
+    @Query(value = """
+        SELECT s.team_member_id AS memberId,
+               m.display_name AS memberName,
+               m.telegram_username AS tgUsername,
+               COUNT(DISTINCT s.extracted_email) AS creatorsCount
+        FROM creator_submissions s
+        JOIN team_members m ON s.team_member_id = m.id
+        WHERE s.status = 'new' AND s.created_at >= :startDate
+        GROUP BY s.team_member_id, m.display_name, m.telegram_username
+        ORDER BY creatorsCount DESC
+    """, nativeQuery = true)
+    List<Map<String, Object>> findTeamLeaderboard(@Param("startDate") OffsetDateTime startDate);
+
+    // Today's total team unique leads
+    @Query(value = """
+        SELECT COUNT(DISTINCT extracted_email)
+        FROM creator_submissions
+        WHERE status = 'new' AND date(created_at) = date(now())
+    """, nativeQuery = true)
+    long countTodayTeamUniqueLeads();
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\repository\CollectorTeamMemberRepository.java
+==================================================
+package com.adrovis.influencer.collector.repository;
+
+import com.adrovis.influencer.collector.entity.CollectorTeamMember;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface CollectorTeamMemberRepository extends JpaRepository<CollectorTeamMember, UUID> {
+    List<CollectorTeamMember> findByActiveTrue();
+    Optional<CollectorTeamMember> findByTelegramUserId(Long telegramUserId);
+    long countByActiveTrue();
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\service\CollectorCreatorService.java
+==================================================
+package com.adrovis.influencer.collector.service;
+
+import com.adrovis.influencer.collector.dto.CreatorFilterRequest;
+import com.adrovis.influencer.collector.dto.CreatorTableResponse;
+import com.adrovis.influencer.collector.dto.RecentCreatorDto;
+import com.adrovis.influencer.collector.entity.CollectorCreator;
+import com.adrovis.influencer.collector.entity.CollectorTeamMember;
+import com.adrovis.influencer.collector.repository.CollectorCreatorRepository;
+import com.adrovis.influencer.collector.repository.CollectorTeamMemberRepository;
+import jakarta.persistence.criteria.Predicate;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class CollectorCreatorService {
+
+    private final CollectorCreatorRepository creatorRepo;
+    private final CollectorTeamMemberRepository memberRepo;
+
+    private static final DateTimeFormatter UI_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM, hh:mm a");
+
+    @Transactional(readOnly = true, transactionManager = "collectorTransactionManager")
+    public CreatorTableResponse getCreatorsTable(CreatorFilterRequest req) {
+        Sort.Direction direction = "asc".equalsIgnoreCase(req.getSortDir()) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        String sortProperty = req.getSortBy() != null ? req.getSortBy() : "createdAt";
+        Pageable pageable = PageRequest.of(Math.max(0, req.getPage()), Math.max(1, req.getSize()), Sort.by(direction, sortProperty));
+
+        Specification<CollectorCreator> spec = buildSpecification(req);
+        Page<CollectorCreator> page = creatorRepo.findAll(spec, pageable);
+
+        Map<UUID, String> memberNameMap = memberRepo.findAll().stream()
+                .collect(Collectors.toMap(CollectorTeamMember::getId, CollectorTeamMember::getDisplayName, (a, b) -> a));
+
+        List<RecentCreatorDto> items = page.getContent().stream().map(c -> {
+            String addedByName = c.getFirstAddedBy() != null ? memberNameMap.getOrDefault(c.getFirstAddedBy(), "Admin") : "Admin";
+            return RecentCreatorDto.builder()
+                    .id(c.getId())
+                    .username(c.getInstagramUsername() != null ? "@" + c.getInstagramUsername() : "â€”")
+                    .name(c.getFullName() != null ? c.getFullName() : "UNKNOWN")
+                    .email(c.getEmail())
+                    .followers(c.getFollowers())
+                    .posts(c.getPostCount())
+                    .niche(c.getNiche() != null ? c.getNiche().split(",")[0].trim() : "â€”")
+                    .location(c.getLocation())
+                    .addedBy(addedByName)
+                    .addedByInitials(getInitials(addedByName))
+                    .addedAt(c.getCreatedAt() != null ? c.getCreatedAt().format(UI_DATE_FMT) : "â€”")
+                    .build();
+        }).collect(Collectors.toList());
+
+        long totalCreators = creatorRepo.countTotalCreators();
+        long withEmail = creatorRepo.countUniqueEmails();
+        long withUser = creatorRepo.countWithUsername();
+        long withLoc = creatorRepo.countWithLocation();
+
+        CreatorTableResponse.CreatorStatsBar statsBar = CreatorTableResponse.CreatorStatsBar.builder()
+                .totalCreators(totalCreators)
+                .totalGrowth("+12.8%")
+                .withEmailCount(withEmail)
+                .withEmailPercentage(totalCreators > 0 ? Math.round((withEmail * 100.0 / totalCreators) * 10.0) / 10.0 : 0.0)
+                .withUsernameCount(withUser)
+                .withUsernamePercentage(totalCreators > 0 ? Math.round((withUser * 100.0 / totalCreators) * 10.0) / 10.0 : 0.0)
+                .withLocationCount(withLoc)
+                .withLocationPercentage(totalCreators > 0 ? Math.round((withLoc * 100.0 / totalCreators) * 10.0) / 10.0 : 0.0)
+                .totalNiches(7)
+                .build();
+
+        return CreatorTableResponse.builder()
+                .stats(statsBar)
+                .items(items)
+                .currentPage(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .build();
+    }
+
+    @Transactional(readOnly = true, transactionManager = "collectorTransactionManager")
+    public String exportCreatorsCsv(CreatorFilterRequest req) {
+        Specification<CollectorCreator> spec = buildSpecification(req);
+        List<CollectorCreator> creators = creatorRepo.findAll(spec, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+
+        pw.println("ID,Instagram Username,Full Name,Email,Followers,Following,Posts,Location,Niche,Added At");
+
+        for (CollectorCreator c : creators) {
+            pw.printf("\"%s\",\"%s\",\"%s\",\"%s\",%s,%s,%s,\"%s\",\"%s\",\"%s\"%n",
+                    c.getId(),
+                    safe(c.getInstagramUsername()),
+                    safe(c.getFullName()),
+                    safe(c.getEmail()),
+                    c.getFollowers() != null ? c.getFollowers() : "",
+                    c.getFollowing() != null ? c.getFollowing() : "",
+                    c.getPostCount() != null ? c.getPostCount() : "",
+                    safe(c.getLocation()),
+                    safe(c.getNiche()),
+                    c.getCreatedAt() != null ? c.getCreatedAt().toString() : ""
+            );
+        }
+        pw.flush();
+        return sw.toString();
+    }
+
+    private Specification<CollectorCreator> buildSpecification(CreatorFilterRequest req) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (req.getSearch() != null && !req.getSearch().isBlank()) {
+                String term = "%" + req.getSearch().trim().toLowerCase() + "%";
+                Predicate searchEmail = cb.like(cb.lower(root.get("email")), term);
+                Predicate searchUsername = cb.like(cb.lower(root.get("instagramUsername")), term);
+                Predicate searchName = cb.like(cb.lower(root.get("fullName")), term);
+                predicates.add(cb.or(searchEmail, searchUsername, searchName));
+            }
+
+            if (req.getNiche() != null && !req.getNiche().isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("niche")), "%" + req.getNiche().trim().toLowerCase() + "%"));
+            }
+
+            if (req.getLocation() != null && !req.getLocation().isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("location")), "%" + req.getLocation().trim().toLowerCase() + "%"));
+            }
+
+            if (req.getAddedBy() != null) {
+                predicates.add(cb.equal(root.get("firstAddedBy"), req.getAddedBy()));
+            }
+
+            if (req.getFollowerRange() != null && !req.getFollowerRange().isBlank()) {
+                switch (req.getFollowerRange()) {
+                    case "0-10k" -> predicates.add(cb.lessThanOrEqualTo(root.get("followers"), 10000L));
+                    case "10k-50k" -> predicates.add(cb.between(root.get("followers"), 10000L, 50000L));
+                    case "50k-100k" -> predicates.add(cb.between(root.get("followers"), 50000L, 100000L));
+                    case "100k+" -> predicates.add(cb.greaterThan(root.get("followers"), 100000L));
+                }
+            }
+
+            if (req.getTimeRange() != null && !req.getTimeRange().isBlank()) {
+                OffsetDateTime now = OffsetDateTime.now();
+                if ("TODAY".equalsIgnoreCase(req.getTimeRange())) {
+                    predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), now.toLocalDate().atStartOfDay().atOffset(now.getOffset())));
+                } else if ("LAST_7_DAYS".equalsIgnoreCase(req.getTimeRange())) {
+                    predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), now.minusDays(7)));
+                } else if ("THIS_MONTH".equalsIgnoreCase(req.getTimeRange())) {
+                    predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), now.withDayOfMonth(1).toLocalDate().atStartOfDay().atOffset(now.getOffset())));
+                }
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+    private String safe(String str) {
+        return str != null ? str.replace("\"", "\"\"") : "";
+    }
+
+    private String getInitials(String name) {
+        if (name == null || name.isBlank()) return "TM";
+        String[] parts = name.trim().split("\\s+");
+        if (parts.length == 1) return parts[0].substring(0, Math.min(2, parts[0].length())).toUpperCase();
+        return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\collector\service\CollectorDashboardService.java
+==================================================
+package com.adrovis.influencer.collector.service;
+
+import com.adrovis.influencer.collector.dto.*;
+import com.adrovis.influencer.collector.entity.CollectorTeamMember;
+import com.adrovis.influencer.collector.repository.CollectorCreatorRepository;
+import com.adrovis.influencer.collector.repository.CollectorSubmissionRepository;
+import com.adrovis.influencer.collector.repository.CollectorTeamMemberRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class CollectorDashboardService {
+
+    private final CollectorCreatorRepository creatorRepo;
+    private final CollectorSubmissionRepository submissionRepo;
+    private final CollectorTeamMemberRepository memberRepo;
+
+    private static final DateTimeFormatter UI_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM, hh:mm a");
+
+    @Transactional(readOnly = true, transactionManager = "collectorTransactionManager")
+    public DashboardOverviewDto getOverview(String timeRange) {
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime startDate = determineStartDate(timeRange, now);
+        OffsetDateTime priorStartDate = startDate.minusDays(7);
+
+        // 1. Core KPIs
+        long totalCreators = creatorRepo.countTotalCreators();
+        long uniqueEmails = creatorRepo.countUniqueEmails();
+        long activeMembers = memberRepo.countByActiveTrue();
+        long todayTargetProgress = submissionRepo.countTodayTeamUniqueLeads();
+        long todayTargetGoal = activeMembers * 50;
+        double todayPercentage = todayTargetGoal > 0 ? (todayTargetProgress * 100.0 / todayTargetGoal) : 0.0;
+
+        // Growth metrics
+        long recentCreated = creatorRepo.countCreatedSince(startDate);
+        long priorCreated = creatorRepo.countCreatedBetween(priorStartDate, startDate);
+        String creatorsGrowth = calculateGrowth(recentCreated, priorCreated);
+
+        long recentEmails = creatorRepo.countEmailsCreatedSince(startDate);
+        long priorEmails = creatorRepo.countEmailsCreatedBetween(priorStartDate, startDate);
+        String emailsGrowth = calculateGrowth(recentEmails, priorEmails);
+
+        DashboardOverviewDto.KpiMetrics kpis = DashboardOverviewDto.KpiMetrics.builder()
+                .totalCreators(totalCreators)
+                .totalCreatorsGrowth(creatorsGrowth)
+                .uniqueEmails(uniqueEmails)
+                .uniqueEmailsGrowth(emailsGrowth)
+                .activeMembers(activeMembers)
+                .todayTargetProgress(todayTargetProgress)
+                .todayTargetGoal(todayTargetGoal > 0 ? todayTargetGoal : 50)
+                .todayTargetPercentage(Math.round(todayPercentage * 10.0) / 10.0)
+                .build();
+
+        // 2. Team Goal
+        DashboardOverviewDto.TeamGoal teamGoal = DashboardOverviewDto.TeamGoal.builder()
+                .current(recentCreated)
+                .target(2000)
+                .percentage(Math.min(100.0, Math.round((recentCreated * 100.0 / 2000.0) * 10.0) / 10.0))
+                .build();
+
+        // 3. Team Competition Leaderboard
+        List<Map<String, Object>> rawLeaderboard = submissionRepo.findTeamLeaderboard(startDate);
+        List<TeamMemberRankDto> leaderboard = new ArrayList<>();
+        int rank = 1;
+        for (Map<String, Object> row : rawLeaderboard) {
+            String name = (String) row.get("memberName");
+            String username = (String) row.get("tgUsername");
+            Number cntNum = (Number) row.get("creatorsCount");
+            long cnt = cntNum != null ? cntNum.longValue() : 0L;
+            UUID memberId = (UUID) row.get("memberId");
+
+            leaderboard.add(TeamMemberRankDto.builder()
+                    .rank(rank++)
+                    .memberId(memberId)
+                    .name(name != null ? name : "Member")
+                    .username(username != null ? "@" + username : null)
+                    .initials(getInitials(name))
+                    .creators(cnt)
+                    .progress(Math.round((cnt * 100.0 / 350.0) * 10.0) / 10.0) // against weekly 350 target
+                    .build());
+        }
+
+        // 4. Collection Trend
+        List<Map<String, Object>> trendRows = creatorRepo.findDailyCollectionTrend(startDate);
+        List<TrendDataPointDto> trend = trendRows.stream().map(row -> TrendDataPointDto.builder()
+                .date((String) row.get("dayLabel"))
+                .totalCreators(((Number) row.get("totalCreators")).longValue())
+                .uniqueEmails(((Number) row.get("uniqueEmails")).longValue())
+                .build()).collect(Collectors.toList());
+
+        // 5. Niche Distribution
+        List<Map<String, Object>> nicheRows = creatorRepo.findNicheDistribution();
+        long nicheTotal = nicheRows.stream().mapToLong(r -> ((Number) r.get("cnt")).longValue()).sum();
+        List<NicheDistDto> nicheDist = nicheRows.stream().map(r -> {
+            long count = ((Number) r.get("cnt")).longValue();
+            double pct = nicheTotal > 0 ? Math.round((count * 100.0 / nicheTotal) * 10.0) / 10.0 : 0.0;
+            return NicheDistDto.builder()
+                    .niche((String) r.get("nicheName"))
+                    .count(count)
+                    .percentage(pct)
+                    .build();
+        }).collect(Collectors.toList());
+
+        // 6. Location Insights
+        List<Map<String, Object>> locRows = creatorRepo.findLocationDistribution();
+        long locTotal = locRows.stream().mapToLong(r -> ((Number) r.get("cnt")).longValue()).sum();
+        List<LocationInsightDto> locDist = locRows.stream().map(r -> {
+            long count = ((Number) r.get("cnt")).longValue();
+            double pct = locTotal > 0 ? Math.round((count * 100.0 / locTotal) * 10.0) / 10.0 : 0.0;
+            return LocationInsightDto.builder()
+                    .location((String) r.get("locName"))
+                    .count(count)
+                    .percentage(pct)
+                    .build();
+        }).collect(Collectors.toList());
+
+        // 7. Recent Creators
+        Map<UUID, String> memberNameMap = memberRepo.findAll().stream()
+                .collect(Collectors.toMap(CollectorTeamMember::getId, CollectorTeamMember::getDisplayName, (a, b) -> a));
+
+        List<RecentCreatorDto> recent = creatorRepo.findTop5ByOrderByCreatedAtDesc().stream().map(c -> {
+            String addedByName = c.getFirstAddedBy() != null ? memberNameMap.getOrDefault(c.getFirstAddedBy(), "Admin") : "Admin";
+            return RecentCreatorDto.builder()
+                    .id(c.getId())
+                    .username(c.getInstagramUsername() != null ? "@" + c.getInstagramUsername() : "â€”")
+                    .name(c.getFullName() != null ? c.getFullName() : "UNKNOWN")
+                    .email(c.getEmail())
+                    .followers(c.getFollowers())
+                    .posts(c.getPostCount())
+                    .niche(c.getNiche() != null ? c.getNiche().split(",")[0].trim() : "â€”")
+                    .location(c.getLocation())
+                    .addedBy(addedByName)
+                    .addedByInitials(getInitials(addedByName))
+                    .addedAt(c.getCreatedAt() != null ? c.getCreatedAt().format(UI_DATE_FMT) : "â€”")
+                    .build();
+        }).collect(Collectors.toList());
+
+        return DashboardOverviewDto.builder()
+                .kpis(kpis)
+                .teamGoal(teamGoal)
+                .teamCompetition(leaderboard)
+                .collectionTrend(trend)
+                .nicheDistribution(nicheDist)
+                .locationInsights(locDist)
+                .recentCreators(recent)
+                .build();
+    }
+
+    private OffsetDateTime determineStartDate(String timeRange, OffsetDateTime now) {
+        if ("TODAY".equalsIgnoreCase(timeRange)) {
+            return now.toLocalDate().atStartOfDay().atOffset(now.getOffset());
+        } else if ("THIS_MONTH".equalsIgnoreCase(timeRange)) {
+            return now.withDayOfMonth(1).toLocalDate().atStartOfDay().atOffset(now.getOffset());
+        }
+        return now.minusDays(7); // default: LAST_7_DAYS
+    }
+
+    private String calculateGrowth(long current, long prior) {
+        if (prior == 0) return current > 0 ? "+100%" : "0.0%";
+        double growth = ((double) (current - prior) / prior) * 100.0;
+        return (growth >= 0 ? "+" : "") + String.format(Locale.US, "%.1f%%", growth);
+    }
+
+    private String getInitials(String name) {
+        if (name == null || name.isBlank()) return "TM";
+        String[] parts = name.trim().split("\\s+");
+        if (parts.length == 1) return parts[0].substring(0, Math.min(2, parts[0].length())).toUpperCase();
+        return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\config\CorsConfig.java
+==================================================
+package com.adrovis.influencer.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
+
+import java.util.Arrays;
+import java.util.List;
+
+@Configuration
+public class CorsConfig {
+
+    @Value("${app.cors.allowed-origins:*}")
+    private String allowedOrigins;
+
+    @Bean
+    public CorsFilter corsFilter() {
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        CorsConfiguration config = new CorsConfiguration();
+        
+        config.setAllowCredentials(false);
+        if ("*".equals(allowedOrigins)) {
+            config.addAllowedOriginPattern("*");
+        } else {
+            config.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+        }
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        
+        source.registerCorsConfiguration("/**", config);
+        return new CorsFilter(source);
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\config\OpenApiConfig.java
+==================================================
+package com.adrovis.influencer.config;
+
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.info.Contact;
+import io.swagger.v3.oas.models.info.Info;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class OpenApiConfig {
+
+    @Bean
+    public OpenAPI customOpenAPI() {
+        return new OpenAPI()
+                .info(new Info()
+                        .title("Influencer Campaign Core API")
+                        .version("1.0.0")
+                        .description("REST API service for campaign discovery, smart filtering, and agency CRM management.")
+                        .contact(new Contact()
+                                .name("ADROVIS Technologies")
+                                .email("contact@adrovis.com")));
+    }
+}
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\controller\AgencyController.java
+==================================================
+package com.adrovis.influencer.controller;
+
+import com.adrovis.influencer.dto.AgencyResponse;
+import com.adrovis.influencer.dto.ApiResponse;
+import com.adrovis.influencer.service.AgencyService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/agencies")
+@RequiredArgsConstructor
+public class AgencyController {
+
+    private final AgencyService agencyService;
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<AgencyResponse>>> listAgencies() {
+        return ResponseEntity.ok(ApiResponse.ok(agencyService.getAllAgencies()));
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\controller\CampaignController.java
+==================================================
+package com.adrovis.influencer.controller;
+
+import com.adrovis.influencer.dto.ApiResponse;
+import com.adrovis.influencer.dto.CampaignFilterRequest;
+import com.adrovis.influencer.dto.PublicCampaignResponse;
+import com.adrovis.influencer.service.CampaignService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.net.URI;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/campaigns")
+@RequiredArgsConstructor
+public class CampaignController {
+
+    private final CampaignService campaignService;
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<Page<PublicCampaignResponse>>> getPublicCampaigns(
+            @ModelAttribute CampaignFilterRequest filter) {
+        Page<PublicCampaignResponse> campaigns = campaignService.getFilteredCampaigns(filter);
+        return ResponseEntity.ok(ApiResponse.ok(campaigns));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<PublicCampaignResponse>> getCampaignDetails(@PathVariable UUID id) {
+        PublicCampaignResponse campaign = campaignService.getCampaignById(id);
+        return ResponseEntity.ok(ApiResponse.ok(campaign));
+    }
+
+    /**
+     * Application Link Proxy:
+     * Logs the click-through / analytics and securely redirects the creator
+     * to the actual Google Form without exposing destination links up-front.
+     */
+    @GetMapping("/{id}/apply")
+    public ResponseEntity<Void> applyToCampaign(@PathVariable UUID id) {
+        String destinationUrl = campaignService.trackAndGetApplicationUrl(id);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setLocation(URI.create(destinationUrl));
+        return new ResponseEntity<>(headers, HttpStatus.FOUND);
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\controller\HealthController.java
+==================================================
+package com.adrovis.influencer.controller;
+
+import com.adrovis.influencer.dto.ApiResponse;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/v1/health")
+public class HealthController {
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<Map<String, String>>> checkHealth() {
+        return ResponseEntity.ok(ApiResponse.ok(Map.of(
+                "status", "UP",
+                "service", "influencer-core-api",
+                "version", "1.0.0"
+        )));
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\dto\AgencyResponse.java
+==================================================
+package com.adrovis.influencer.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class AgencyResponse {
+    private UUID id;
+    private String agencyName;
+    private String contactPhone;
+    private String contactEmail;
+    private String instagramHandle;
+    private String notes;
+    private Integer activeCampaignsCount;
+    private OffsetDateTime createdAt;
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\dto\ApiResponse.java
+==================================================
+package com.adrovis.influencer.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.OffsetDateTime;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ApiResponse<T> {
+    private boolean success;
+    private String message;
+    private T data;
+    @Builder.Default
+    private OffsetDateTime timestamp = OffsetDateTime.now();
+
+    public static <T> ApiResponse<T> ok(T data) {
+        return ApiResponse.<T>builder()
+                .success(true)
+                .message("Operation successful")
+                .data(data)
+                .build();
+    }
+
+    public static <T> ApiResponse<T> ok(String message, T data) {
+        return ApiResponse.<T>builder()
+                .success(true)
+                .message(message)
+                .data(data)
+                .build();
+    }
+
+    public static <T> ApiResponse<T> fail(String message) {
+        return ApiResponse.<T>builder()
+                .success(false)
+                .message(message)
+                .data(null)
+                .build();
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\dto\CampaignFilterRequest.java
+==================================================
+package com.adrovis.influencer.dto;
+
+import lombok.Data;
+
+@Data
+public class CampaignFilterRequest {
+    private String campaignType;
+    private Integer maxFollowers;
+    private String brand;
+    private String category;
+    private String location;
+    private Double minPayout;
+    private Integer page = 0;
+    private Integer size = 12;
+    private String sortBy = "created_at";
+    private String sortDirection = "DESC";
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\dto\PublicCampaignResponse.java
+==================================================
+package com.adrovis.influencer.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class PublicCampaignResponse {
+    private UUID id;
+    private String brandName;
+    private String brandInstagramUrl;
+    private String campaignTitle;
+    private String campaignType;
+    private String applyProxyUrl;
+    private List<String> images;
+    private Map<String, Object> compensation;
+    private List<String> deliverables;
+    private String adRights;
+    private List<String> categories;
+    private String productName;
+    private Map<String, Object> eligibility;
+    private Map<String, Object> schedule;
+    private List<String> importantRequirements;
+    private List<String> referenceLinks;
+    private OffsetDateTime createdAt;
+    private OffsetDateTime expiresAt;
+    private Long viewsCount;
+    private Long clicksCount;
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\entity\AgencyEntity.java
+==================================================
+package com.adrovis.influencer.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Entity
+@Table(name = "agencies")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class AgencyEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "agency_name", nullable = false)
+    private String agencyName;
+
+    @Column(name = "contact_phone", unique = true)
+    private String contactPhone;
+
+    @Column(name = "contact_email")
+    private String contactEmail;
+
+    @Column(name = "instagram_handle")
+    private String instagramHandle;
+
+    @Column(name = "notes", columnDefinition = "TEXT")
+    private String notes;
+
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private OffsetDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private OffsetDateTime updatedAt;
+
+    @OneToMany(mappedBy = "agency", fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<CampaignEntity> campaigns = new ArrayList<>();
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\entity\CampaignEntity.java
+==================================================
+package com.adrovis.influencer.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Entity
+@Table(name = "campaigns")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CampaignEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "brand_name", nullable = false)
+    private String brandName;
+
+    @Column(name = "campaign_title", nullable = false)
+    private String campaignTitle;
+
+    @Column(name = "campaign_type", nullable = false)
+    private String campaignType;
+
+    @Column(name = "application_form_url", nullable = false, unique = true)
+    private String applicationFormUrl;
+
+    @Column(name = "brand_instagram_url")
+    private String brandInstagramUrl;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "canonical_data", columnDefinition = "jsonb", nullable = false)
+    private Map<String, Object> canonicalData;
+
+    @Column(name = "is_active")
+    @Builder.Default
+    private Boolean isActive = true;
+
+    @Column(name = "views_count")
+    @Builder.Default
+    private Long viewsCount = 0L;
+
+    @Column(name = "clicks_count")
+    @Builder.Default
+    private Long clicksCount = 0L;
+
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private OffsetDateTime createdAt;
+
+    @Column(name = "expires_at")
+    private OffsetDateTime expiresAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agency_id")
+    private AgencyEntity agency;
+
+    @OneToMany(mappedBy = "campaign", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("imageOrder ASC")
+    @Builder.Default
+    private List<CampaignImageEntity> images = new ArrayList<>();
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\entity\CampaignImageEntity.java
+==================================================
+package com.adrovis.influencer.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+@Entity
+@Table(name = "campaign_images")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CampaignImageEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "campaign_id", nullable = false)
+    private CampaignEntity campaign;
+
+    @Column(name = "storage_path", nullable = false)
+    private String storagePath;
+
+    @Column(name = "public_url", nullable = false)
+    private String publicUrl;
+
+    @Column(name = "image_order", nullable = false)
+    @Builder.Default
+    private Integer imageOrder = 1;
+
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private OffsetDateTime createdAt;
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\enums\CampaignType.java
+==================================================
+package com.adrovis.influencer.enums;
+
+public enum CampaignType {
+    PAID,
+    BARTER,
+    PRODUCT_EXCHANGE,
+    UNKNOWN
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\enums\GenderRequirement.java
+==================================================
+package com.adrovis.influencer.enums;
+
+public enum GenderRequirement {
+    ANY,
+    MALE_ONLY,
+    FEMALE_ONLY,
+    NOT_SPECIFIED
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\enums\ProductProvided.java
+==================================================
+package com.adrovis.influencer.enums;
+
+public enum ProductProvided {
+    YES,
+    NO,
+    NOT_SPECIFIED,
+    UNKNOWN
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\exception\GlobalExceptionHandler.java
+==================================================
+package com.adrovis.influencer.exception;
+
+import com.adrovis.influencer.dto.ApiResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotFound(ResourceNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.fail(ex.getMessage()));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> handleGeneralException(Exception ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.fail("An unexpected server error occurred: " + ex.getMessage()));
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\exception\ResourceNotFoundException.java
+==================================================
+package com.adrovis.influencer.exception;
+
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String message) {
+        super(message);
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\repository\AgencyRepository.java
+==================================================
+package com.adrovis.influencer.repository;
+
+import com.adrovis.influencer.entity.AgencyEntity;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface AgencyRepository extends JpaRepository<AgencyEntity, UUID> {
+    Optional<AgencyEntity> findByContactPhone(String contactPhone);
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\repository\CampaignImageRepository.java
+==================================================
+package com.adrovis.influencer.repository;
+
+import com.adrovis.influencer.entity.CampaignImageEntity;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.UUID;
+
+@Repository
+public interface CampaignImageRepository extends JpaRepository<CampaignImageEntity, UUID> {
+    List<CampaignImageEntity> findByCampaignIdOrderByImageOrderAsc(UUID campaignId);
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\repository\CampaignRepository.java
+==================================================
+package com.adrovis.influencer.repository;
+
+import com.adrovis.influencer.entity.CampaignEntity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface CampaignRepository extends JpaRepository<CampaignEntity, UUID> {
+
+    @Query("SELECT c FROM CampaignEntity c LEFT JOIN FETCH c.images WHERE c.id = :id AND c.isActive = true")
+    Optional<CampaignEntity> findActiveByIdWithImages(@Param("id") UUID id);
+
+    Optional<CampaignEntity> findByApplicationFormUrl(String applicationFormUrl);
+
+    @Modifying
+    @Query("UPDATE CampaignEntity c SET c.viewsCount = c.viewsCount + 1 WHERE c.id = :id")
+    void incrementViewsCount(@Param("id") UUID id);
+
+    @Modifying
+    @Query("UPDATE CampaignEntity c SET c.clicksCount = c.clicksCount + 1 WHERE c.id = :id")
+    void incrementClicksCount(@Param("id") UUID id);
+
+    @Query(value = """
+        SELECT * FROM campaigns c
+        WHERE c.is_active = true
+          AND (:campaignType IS NULL OR c.campaign_type = :campaignType)
+          AND (:maxFollowers IS NULL OR CAST(c.canonical_data->'eligibility'->>'minimum_followers' AS INTEGER) <= :maxFollowers)
+          AND (:brand IS NULL OR LOWER(c.brand_name) LIKE LOWER(CONCAT('%', :brand, '%')))
+          AND (:minPayout IS NULL OR (
+                CAST(c.canonical_data->'compensation'->>'payout_amount_inr' AS NUMERIC) >= :minPayout
+                OR CAST(c.canonical_data->'compensation'->'tiers'->0->>'payout' AS NUMERIC) >= :minPayout
+              ))
+        ORDER BY c.created_at DESC
+        """,
+        countQuery = """
+        SELECT count(*) FROM campaigns c
+        WHERE c.is_active = true
+          AND (:campaignType IS NULL OR c.campaign_type = :campaignType)
+          AND (:maxFollowers IS NULL OR CAST(c.canonical_data->'eligibility'->>'minimum_followers' AS INTEGER) <= :maxFollowers)
+          AND (:brand IS NULL OR LOWER(c.brand_name) LIKE LOWER(CONCAT('%', :brand, '%')))
+          AND (:minPayout IS NULL OR (
+                CAST(c.canonical_data->'compensation'->>'payout_amount_inr' AS NUMERIC) >= :minPayout
+                OR CAST(c.canonical_data->'compensation'->'tiers'->0->>'payout' AS NUMERIC) >= :minPayout
+              ))
+        """,
+        nativeQuery = true)
+    Page<CampaignEntity> findFilteredCampaigns(
+            @Param("campaignType") String campaignType,
+            @Param("maxFollowers") Integer maxFollowers,
+            @Param("brand") String brand,
+            @Param("minPayout") Double minPayout,
+            Pageable pageable
+    );
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\service\AgencyService.java
+==================================================
+package com.adrovis.influencer.service;
+
+import com.adrovis.influencer.dto.AgencyResponse;
+import com.adrovis.influencer.entity.AgencyEntity;
+import com.adrovis.influencer.repository.AgencyRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class AgencyService {
+
+    private final AgencyRepository agencyRepository;
+
+    @Transactional(readOnly = true)
+    public List<AgencyResponse> getAllAgencies() {
+        return agencyRepository.findAll().stream()
+                .map(agency -> AgencyResponse.builder()
+                        .id(agency.getId())
+                        .agencyName(agency.getAgencyName())
+                        .contactPhone(agency.getContactPhone())
+                        .contactEmail(agency.getContactEmail())
+                        .instagramHandle(agency.getInstagramHandle())
+                        .notes(agency.getNotes())
+                        .activeCampaignsCount(agency.getCampaigns() != null ? agency.getCampaigns().size() : 0)
+                        .createdAt(agency.getCreatedAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
+}
+
+
+
+==================================================
+FILE: src\main\java\com\adrovis\influencer\service\CampaignService.java
+==================================================
+package com.adrovis.influencer.service;
+
+import com.adrovis.influencer.dto.CampaignFilterRequest;
+import com.adrovis.influencer.dto.PublicCampaignResponse;
+import com.adrovis.influencer.entity.CampaignEntity;
+import com.adrovis.influencer.entity.CampaignImageEntity;
+import com.adrovis.influencer.exception.ResourceNotFoundException;
+import com.adrovis.influencer.repository.CampaignRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class CampaignService {
+
+    private final CampaignRepository campaignRepository;
+
+    @Value("${app.backend-base-url:http://localhost:8080}")
+    private String backendBaseUrl;
+
+    @Transactional(readOnly = true)
+    public Page<PublicCampaignResponse> getFilteredCampaigns(CampaignFilterRequest filter) {
+        Pageable pageable = PageRequest.of(filter.getPage(), filter.getSize());
+        Page<CampaignEntity> entities = campaignRepository.findFilteredCampaigns(
+                filter.getCampaignType(),
+                filter.getMaxFollowers(),
+                filter.getBrand(),
+                filter.getMinPayout(),
+                pageable
+        );
+        return entities.map(this::mapToPublicResponse);
+    }
+
+    @Transactional
+    public PublicCampaignResponse getCampaignById(UUID id) {
+        CampaignEntity campaign = campaignRepository.findActiveByIdWithImages(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Campaign not found with ID: " + id));
+
+        campaignRepository.incrementViewsCount(id);
+        return mapToPublicResponse(campaign);
+    }
+
+    @Transactional
+    public String trackAndGetApplicationUrl(UUID id) {
+        CampaignEntity campaign = campaignRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Campaign not found with ID: " + id));
+
+        campaignRepository.incrementClicksCount(id);
+        log.info("Tracked application click for campaign ID: {} (Brand: {})", id, campaign.getBrandName());
+        return campaign.getApplicationFormUrl();
+    }
+
+    @SuppressWarnings("unchecked")
+    private PublicCampaignResponse mapToPublicResponse(CampaignEntity entity) {
+        Map<String, Object> data = entity.getCanonicalData();
+        if (data == null) {
+            data = Collections.emptyMap();
+        }
+
+        List<String> imageUrls = entity.getImages().stream()
+                .map(CampaignImageEntity::getPublicUrl)
+                .collect(Collectors.toList());
+
+        if (imageUrls.isEmpty() && data.containsKey("images")) {
+            Object imgObj = data.get("images");
+            if (imgObj instanceof List<?>) {
+                imageUrls = ((List<?>) imgObj).stream().map(Object::toString).collect(Collectors.toList());
+            }
+        }
+
+        Map<String, Object> comp = (Map<String, Object>) data.getOrDefault("compensation", Collections.emptyMap());
+        List<String> deliverables = (List<String>) data.getOrDefault("deliverables", Collections.emptyList());
+        List<String> categories = (List<String>) data.getOrDefault("categories", Collections.emptyList());
+        Map<String, Object> eligibility = (Map<String, Object>) data.getOrDefault("eligibility", Collections.emptyMap());
+        Map<String, Object> schedule = (Map<String, Object>) data.getOrDefault("schedule", Collections.emptyMap());
+        List<String> reqs = (List<String>) data.getOrDefault("important_requirements", Collections.emptyList());
+        List<String> refs = (List<String>) data.getOrDefault("reference_links", Collections.emptyList());
+
+        String proxyUrl = backendBaseUrl + "/api/v1/campaigns/" + entity.getId() + "/apply";
+
+        return PublicCampaignResponse.builder()
+                .id(entity.getId())
+                .brandName(entity.getBrandName())
+                .brandInstagramUrl(entity.getBrandInstagramUrl())
+                .campaignTitle(entity.getCampaignTitle())
+                .campaignType(entity.getCampaignType())
+                .applyProxyUrl(proxyUrl)
+                .images(imageUrls)
+                .compensation(comp)
+                .deliverables(deliverables)
+                .adRights((String) data.get("ad_rights"))
+                .categories(categories)
+                .productName((String) data.get("product_name"))
+                .eligibility(eligibility)
+                .schedule(schedule)
+                .importantRequirements(reqs)
+                .referenceLinks(refs)
+                .createdAt(entity.getCreatedAt())
+                .expiresAt(entity.getExpiresAt())
+                .viewsCount(entity.getViewsCount())
+                .clicksCount(entity.getClicksCount())
+                .build();
+    }
+}
+
+
+
+==================================================
+FILE: src\main\resources\application-dev.yml
+==================================================
+spring:
+  datasource:
+    # 1. Stockholm IPv4 Connection Pooler URL
+    url: jdbc:postgresql://aws-0-eu-north-1.pooler.supabase.com:5432/postgres?sslmode=require
+
+    # 2. Pooler username format: postgres.[project-ref]
+    username: postgres.dhfstnonquoyfgnpswsw
+
+    # 3. Your actual Supabase database password
+    password: ${SUPABASE_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+# ==========================================
+# 2. NEW CREATOR COLLECTOR DATABASE (SUPABASE)
+# ==========================================
+collector:
+  datasource:
+    # Replace with your Collector Supabase project pooler URL (dxclgwqkxmmxgeyovagd)
+    url: jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
+    username: postgres.dxclgwqkxmmxgeyovagd
+    password: ${COLLECTOR_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+logging:
+  level:
+    com.adrovis.influencer: DEBUG
+    org.hibernate.SQL: DEBUG
+
+
+==================================================
+FILE: src\main\resources\application-prod.yml
+==================================================
+spring:
+  datasource:
+    # 1. Stockholm IPv4 Connection Pooler URL
+    url: jdbc:postgresql://aws-0-eu-north-1.pooler.supabase.com:5432/postgres?sslmode=require
+
+    # 2. Pooler username format: postgres.[project-ref]
+    username: postgres.dhfstnonquoyfgnpswsw
+
+    # 3. Your actual Supabase database password
+    password: ${SUPABASE_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+collector:
+  datasource:
+    url: ${COLLECTOR_DB_URL:jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require}
+    username: ${COLLECTOR_DB_USER:postgres.dxclgwqkxmmxgeyovagd}
+    password: ${COLLECTOR_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+logging:
+  level:
+    root: INFO
+    com.adrovis.influencer: INFO
+
+
+
+==================================================
+FILE: src\main\resources\application.yml
+==================================================
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: influencer-core-api
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      idle-timeout: 30000
+      max-lifetime: 600000
+      connection-timeout: 20000
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+app:
+  backend-base-url: ${BACKEND_BASE_URL:http://localhost:8080}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
