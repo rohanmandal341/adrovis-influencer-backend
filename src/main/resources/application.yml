@@ -13,12 +13,12 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: BrandCollabzHikariPool
-      maximum-pool-size: 15
-      minimum-idle: 5
-      idle-timeout: 30000
-      max-lifetime: 600000
-      connection-timeout: 20000
-      leak-detection-threshold: 30000
+      maximum-pool-size: 4       # LEAVE AT 3-4 (Never use 15 on Supabase starter/free pooler)
+      minimum-idle: 1
+      idle-timeout: 20000
+      max-lifetime: 300000       # 5 minutes (prevents pooler timeout desync)
+      connection-timeout: 15000
+      leak-detection-threshold: 20000
 
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
