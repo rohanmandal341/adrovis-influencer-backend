@@ -34,7 +34,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import org.springframework.security.access.prepost.PreAuthorize;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -51,7 +52,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/analytics")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "${analytics.allowed-origins:*}")
 @Slf4j
 public class AnalyticsController {
 
@@ -68,9 +68,6 @@ public class AnalyticsController {
     @Value("${analytics.visitor-salt:change-me-in-production}")
     private String visitorSalt;
 
-    /** Shared secret for admin endpoints (/overview, /sessions). Empty = admin endpoints locked. */
-    @Value("${analytics.admin-key:}")
-    private String adminKey;
 
     // =====================================================================
     // DTOs
@@ -244,12 +241,12 @@ public class AnalyticsController {
     // =====================================================================
 
     @GetMapping("/overview")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<Map<String, Object>>> getOverview(
-            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey,
             @RequestParam(defaultValue = "30") int days) {
 
-        requireAdmin(providedKey);
         int window = Math.min(Math.max(days, 1), 365);
 
         long liveUsers = analyticsRepository.countLiveActiveUsers();
@@ -332,9 +329,10 @@ public class AnalyticsController {
     }
 
     @GetMapping("/sessions")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<Page<AnalyticsSessionEntity>>> getSessions(
-            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey,
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String deviceType,
             @RequestParam(required = false) String channel,
@@ -347,7 +345,6 @@ public class AnalyticsController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String direction) {
 
-        requireAdmin(providedKey);
 
         final String device;
         if (deviceType == null || deviceType.isBlank()) {
@@ -414,36 +411,26 @@ public class AnalyticsController {
     }
 
     @GetMapping("/sessions/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<AnalyticsSessionEntity>> getSession(
-            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey,
             @PathVariable UUID id) {
-        requireAdmin(providedKey);
         return ResponseEntity.ok(ApiResponse.ok(analyticsRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"))));
     }
 
     @GetMapping("/leads")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @Transactional(readOnly = true)
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getLeads(
-            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey) {
-        requireAdmin(providedKey);
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getLeads() {
         return ResponseEntity.ok(ApiResponse.ok(safe(analyticsRepository.getRecentLeads())));
     }
 
     // =====================================================================
     // HELPERS
     // =====================================================================
-
-    private void requireAdmin(String provided) {
-        boolean ok = adminKey != null && !adminKey.isBlank() && provided != null
-                && MessageDigest.isEqual(
-                adminKey.getBytes(StandardCharsets.UTF_8),
-                provided.getBytes(StandardCharsets.UTF_8));
-        if (!ok) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
-        }
-    }
 
     private static double num(Map<String, Object> map, String key, double defaultValue) {
         if (map == null) return defaultValue;

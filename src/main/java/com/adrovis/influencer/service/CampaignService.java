@@ -55,14 +55,29 @@ public class CampaignService {
         return mapToPublicResponse(campaign);
     }
 
-    @Transactional
-    public String trackAndGetApplicationUrl(UUID id) {
+    @Transactional(readOnly = true)
+    public String getApplicationDestination(UUID id) {
         CampaignEntity campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Campaign not found with ID: " + id));
+        String destination = campaign.getApplicationFormUrl();
+        try {
+            java.net.URI uri = java.net.URI.create(destination);
+            if (!Set.of("https", "http").contains(uri.getScheme()) || uri.getHost() == null
+                    || uri.getUserInfo() != null) {
+                throw new IllegalArgumentException("Invalid application URL");
+            }
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new ResourceNotFoundException("Campaign application link is unavailable");
+        }
+        return destination;
+    }
 
+    @Transactional
+    public String trackAndGetApplicationUrl(UUID id) {
+        String destination = getApplicationDestination(id);
         campaignRepository.incrementClicksCount(id);
-        log.info("Application click recorded for campaign ID: {} (Brand: {})", id, campaign.getBrandName());
-        return campaign.getApplicationFormUrl();
+        log.info("Application click recorded for campaign ID: {}", id);
+        return destination;
     }
 
     @SuppressWarnings("unchecked")

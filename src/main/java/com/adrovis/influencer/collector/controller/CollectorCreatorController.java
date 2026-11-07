@@ -1,5 +1,6 @@
 package com.adrovis.influencer.collector.controller;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import com.adrovis.influencer.collector.dto.CreatorFilterRequest;
 import com.adrovis.influencer.collector.dto.CreatorTableResponse;
 import com.adrovis.influencer.collector.entity.CollectorTeamMember;
@@ -15,9 +16,9 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
+@SecurityRequirement(name = "adrovisBearer")
 @RequestMapping("/api/v1/collector/creators")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class CollectorCreatorController {
 
     private final CollectorCreatorService creatorService;

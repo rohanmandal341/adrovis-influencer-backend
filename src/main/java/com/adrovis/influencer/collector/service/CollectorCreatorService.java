@@ -1,5 +1,6 @@
 package com.adrovis.influencer.collector.service;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.adrovis.influencer.collector.dto.CreatorFilterRequest;
 import com.adrovis.influencer.collector.dto.CreatorTableResponse;
 import com.adrovis.influencer.collector.dto.RecentCreatorDto;
@@ -25,6 +26,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
+@PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class CollectorCreatorService {
 

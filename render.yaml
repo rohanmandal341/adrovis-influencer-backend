@@ -16,6 +16,14 @@ services:
         sync: false
       - key: BACKEND_BASE_URL
         sync: false # Set to your Render URL e.g. https://influencer-core-api.onrender.com
-      - key: CORS_ALLOWED_ORIGINS
-        value: "*"
+      - key: ADROVIS_AUTH_ISSUER
+        sync: false
+      - key: ADROVIS_AUTH_AUDIENCE
+        value: adrovis-platform
+      - key: ADROVIS_AUTH_PUBLIC_KEY_LOCATION
+        value: file:/etc/secrets/adrovis-public.pem
+      - key: ADROVIS_AUTH_STATUS_URL
+        sync: false
+      - key: ADROVIS_FRONTEND_ORIGIN
+        sync: false
     healthCheckPath: /api/v1/health

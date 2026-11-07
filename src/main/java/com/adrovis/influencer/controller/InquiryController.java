@@ -1,5 +1,7 @@
 package com.adrovis.influencer.controller;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.adrovis.influencer.dto.ApiResponse;
 import com.adrovis.influencer.entity.InquiryEntity;
 import com.adrovis.influencer.exception.ResourceNotFoundException;
@@ -23,7 +25,6 @@ import java.util.UUID;
 @RequestMapping("/api/v1/inquiries")
 @RequiredArgsConstructor
 @Validated
-@CrossOrigin(origins = "*")
 public class InquiryController {
 
     private final InquiryRepository inquiryRepository;
@@ -91,6 +92,8 @@ public class InquiryController {
      * GET /api/v1/inquiries
      * Paginated list with filtering by role, status, and search query
      */
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @GetMapping
     public ResponseEntity<ApiResponse<Page<InquiryEntity>>> listInquiries(
             @RequestParam(required = false) String role,
@@ -113,6 +116,8 @@ public class InquiryController {
      * GET /api/v1/inquiries/{id}
      * Get specific inquiry details
      */
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<InquiryEntity>> getInquiryDetails(@PathVariable UUID id) {
         InquiryEntity inquiry = inquiryRepository.findById(id)
@@ -124,6 +129,8 @@ public class InquiryController {
      * PATCH /api/v1/inquiries/{id}/status
      * Update status (NEW -> IN_REVIEW -> CONTACTED -> RESOLVED)
      */
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @PatchMapping("/{id}/status")
     public ResponseEntity<ApiResponse<InquiryEntity>> updateInquiryStatus(
             @PathVariable UUID id,
