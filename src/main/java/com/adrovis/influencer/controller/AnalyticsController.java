@@ -420,16 +420,13 @@ public class AnalyticsController {
     // =====================================================================
 
     private void requireAdmin(String provided) {
-        // Only enforce the check if an adminKey is configured
-        if (adminKey != null && !adminKey.isBlank()) {
-            boolean ok = provided != null && MessageDigest.isEqual(
-                    adminKey.getBytes(StandardCharsets.UTF_8),
-                    provided.getBytes(StandardCharsets.UTF_8));
-            if (!ok) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid or missing X-Admin-Key");
-            }
+        boolean ok = adminKey != null && !adminKey.isBlank() && provided != null
+                && MessageDigest.isEqual(
+                adminKey.getBytes(StandardCharsets.UTF_8),
+                provided.getBytes(StandardCharsets.UTF_8));
+        if (!ok) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
         }
-        // If adminKey is not configured, bypass check so frontend dashboard works immediately
     }
 
     private static double num(Map<String, Object> map, String key, double defaultValue) {
