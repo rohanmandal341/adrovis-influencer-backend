@@ -27,14 +27,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Mac;
@@ -348,6 +341,7 @@ public class AnalyticsController {
             @RequestParam(required = false) Boolean applied,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Boolean activeNow,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
@@ -402,6 +396,10 @@ public class AnalyticsController {
                 p.add(cb.lessThan(root.<OffsetDateTime>get("createdAt"),
                         to.plusDays(1).atStartOfDay(IST).toOffsetDateTime()));
             }
+            if (Boolean.TRUE.equals(activeNow)) {                         // <-- ADD THIS BLOCK
+                p.add(cb.greaterThanOrEqualTo(root.<OffsetDateTime>get("lastActiveAt"),
+                        OffsetDateTime.now().minusMinutes(5)));
+            }
             return cb.and(p.toArray(new Predicate[0]));
         };
 
@@ -415,6 +413,15 @@ public class AnalyticsController {
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
+    @GetMapping("/sessions/{id}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<ApiResponse<AnalyticsSessionEntity>> getSession(
+            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey,
+            @PathVariable UUID id) {
+        requireAdmin(providedKey);
+        return ResponseEntity.ok(ApiResponse.ok(analyticsRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"))));
+    }
     // =====================================================================
     // HELPERS
     // =====================================================================
