@@ -31,3 +31,12 @@ logging:
   level:
     com.adrovis.influencer: DEBUG
     org.hibernate.SQL: DEBUG
+
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID:rzp_live_TPDJ7j4wIp0eFJ}
+  key-secret: ${RAZORPAY_KEY_SECRET:rVcBoOnGloPpisD0mqg2ezLC}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:Jr.gykGbU48_EUZ}
+
+app:
+  payment:
+    currency: INR

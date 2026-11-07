@@ -1,26 +1,37 @@
 spring:
+  config:
+    activate:
+      on-profile: prod
+
   datasource:
-    # 1. Stockholm IPv4 Connection Pooler URL
-    url: jdbc:postgresql://aws-0-eu-north-1.pooler.supabase.com:5432/postgres?sslmode=require
-
-    # 2. Pooler username format: postgres.[project-ref]
+    # Port 6543 (Transaction Mode) + prepareThreshold=0 completely removes the 15-connection limit
+    url: jdbc:postgresql://aws-0-eu-north-1.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0
     username: postgres.dhfstnonquoyfgnpswsw
-
-    # 3. Your actual Supabase database password
     password: ${SUPABASE_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 2
+      minimum-idle: 1
+
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none
     show-sql: false
 
 collector:
   datasource:
-    url: ${COLLECTOR_DB_URL:jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require}
+    url: ${COLLECTOR_DB_URL:jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0}
     username: ${COLLECTOR_DB_USER:postgres.dxclgwqkxmmxgeyovagd}
     password: ${COLLECTOR_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 2
+      minimum-idle: 1
 
-logging:
-  level:
-    root: INFO
-    com.adrovis.influencer: INFO
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID:rzp_test_your_key_id}
+  key-secret: ${RAZORPAY_KEY_SECRET:your_key_secret}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:your_webhook_secret}
+
+app:
+  payment:
+    currency: INR

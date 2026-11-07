@@ -26,3 +26,12 @@ collector:
     hikari:
       maximum-pool-size: 2
       minimum-idle: 1
+
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID:rzp_test_your_key_id}
+  key-secret: ${RAZORPAY_KEY_SECRET:your_key_secret}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:your_webhook_secret}
+
+app:
+  payment:
+    currency: INR
