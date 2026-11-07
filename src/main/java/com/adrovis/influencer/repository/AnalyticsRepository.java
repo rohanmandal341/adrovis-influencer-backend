@@ -274,4 +274,14 @@ public interface AnalyticsRepository
             WHERE created_at >= now() - (CAST(:days AS integer) * interval '1 day')
             """, nativeQuery = true)
     long countLeadsSince(@Param("days") int days);
+
+    @Query(value = """
+        SELECT email, full_name, phone, user_type, session_id, first_channel,
+               first_utm_source, first_utm_medium, first_utm_campaign, first_utm_content,
+               first_city, created_at
+        FROM analytics_leads
+        ORDER BY created_at DESC
+        LIMIT 500
+        """, nativeQuery = true)
+    List<Map<String, Object>> getRecentLeads();
 }

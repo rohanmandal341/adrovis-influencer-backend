@@ -422,6 +422,15 @@ public class AnalyticsController {
         return ResponseEntity.ok(ApiResponse.ok(analyticsRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"))));
     }
+
+    @GetMapping("/leads")
+    @Transactional(readOnly = true)
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getLeads(
+            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey) {
+        requireAdmin(providedKey);
+        return ResponseEntity.ok(ApiResponse.ok(safe(analyticsRepository.getRecentLeads())));
+    }
+
     // =====================================================================
     // HELPERS
     // =====================================================================
