@@ -37,3 +37,8 @@ app:
   backend-base-url: ${BACKEND_BASE_URL:https://adrovis-influencer-backend.onrender.com}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
+analytics:
+  visitor-salt: ${ANALYTICS_VISITOR_SALT:bc_secret_salt_2026_brand_collabz}
+  admin-key: ${ANALYTICS_ADMIN_KEY:brand_collabz_admin_secret_99}
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
