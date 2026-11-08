@@ -27,7 +27,8 @@ import java.util.Objects;
 @EnableJpaRepositories(
         basePackages = {
                 "com.adrovis.influencer.repository",
-                "com.adrovis.email.repository"
+                "com.adrovis.email.repository",
+                "com.adrovis.influencer.payment.repository"
         },
         entityManagerFactoryRef = "primaryEntityManagerFactory",
         transactionManagerRef = "primaryTransactionManager"
@@ -61,7 +62,8 @@ public class PrimaryDbConfig {
                 .dataSource(dataSource)
                 .packages(
                         "com.adrovis.influencer.entity",
-                        "com.adrovis.email.entity"
+                        "com.adrovis.email.entity",
+                        "com.adrovis.influencer.payment.entity"
                 )
                 .persistenceUnit("primaryPU")
                 .properties(properties)

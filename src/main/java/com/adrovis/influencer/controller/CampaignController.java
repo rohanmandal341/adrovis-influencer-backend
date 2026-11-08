@@ -28,6 +28,7 @@ public class CampaignController {
     private final CampaignService campaignService;
     private final CampaignApplyAccessService applyAccess;
     private final GuestApplyCookie guestCookies;
+    /** Preserves public campaign discovery and the existing filter contract. */
 
     @GetMapping
     public ResponseEntity<ApiResponse<Page<PublicCampaignResponse>>> getPublicCampaigns(
@@ -35,6 +36,7 @@ public class CampaignController {
         Page<PublicCampaignResponse> campaigns = campaignService.getFilteredCampaigns(filter);
         return ResponseEntity.ok(ApiResponse.ok(campaigns));
     }
+    /** Preserves public campaign details without exposing the direct application destination. */
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<PublicCampaignResponse>> getCampaignDetails(@PathVariable UUID id) {
@@ -59,6 +61,7 @@ public class CampaignController {
     }
 
     // JSON alternative lets the frontend display signup before navigating to an external form.
+    /** Returns a gated JSON destination so the frontend can show signup before navigating. */
     @PostMapping("/{id}/apply-access")
     public ResponseEntity<Map<String, Object>> applyAccess(
             @PathVariable UUID id,
@@ -69,6 +72,7 @@ public class CampaignController {
         return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(Map.of("success", true, "applicationUrl", destination));
     }
+    /** Validates the destination and atomically enforces the selected guest policy before recording a click. */
 
     private String grant(UUID id, String raw, Jwt account, HttpServletResponse response) {
         if (account != null) {

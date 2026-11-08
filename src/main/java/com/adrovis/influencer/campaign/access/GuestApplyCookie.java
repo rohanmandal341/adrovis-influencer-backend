@@ -22,6 +22,7 @@ public class GuestApplyCookie {
     private final SecureRandom random = new SecureRandom();
     private final boolean secure;
     private final String sameSite;
+    /** Initializes the explicit dependencies and validates this component's configuration. */
 
     public GuestApplyCookie(@Value("${app.guest-apply.cookie-secure:true}") boolean secure,
                             @Value("${app.guest-apply.cookie-same-site:Lax}") String sameSite,
@@ -34,6 +35,7 @@ public class GuestApplyCookie {
         this.secure = secure;
         this.sameSite = sameSite;
     }
+    /** Reuses a valid random browser identity or creates a fresh cryptographic identifier. */
 
     public String identity(String raw) {
         if (raw != null && raw.matches("[A-Za-z0-9_-]{43}")) {
@@ -43,6 +45,7 @@ public class GuestApplyCookie {
         random.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
+    /** Derives the stored guest identifier without retaining the raw cookie. */
 
     public String hash(String raw) {
         try {
@@ -52,6 +55,7 @@ public class GuestApplyCookie {
             throw new IllegalStateException("SHA-256 is required", exception);
         }
     }
+    /** Writes the scoped HttpOnly guest cookie; production requires Secure and an explicit SameSite policy. */
 
     public void write(HttpServletResponse response, String raw) {
         response.addHeader(HttpHeaders.SET_COOKIE, ResponseCookie.from(NAME, raw)

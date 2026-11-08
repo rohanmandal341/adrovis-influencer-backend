@@ -13,6 +13,7 @@ public class GuestApplyRepository {
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
+    /** Initializes the explicit dependencies and validates this component's configuration. */
 
     public GuestApplyRepository(@Qualifier("primaryDataSource") DataSource dataSource,
                                 @Qualifier("primaryTransactionManager") PlatformTransactionManager manager) {
@@ -20,27 +21,36 @@ public class GuestApplyRepository {
         this.transactions = new TransactionTemplate(manager);
     }
 
-    public boolean allow(String guestHash, UUID campaignId, int limit) {
+    /** Serializes quota and grant writes on one guest row; the caller's primary transaction also records the click. */
+    public boolean allow(String guestHash, UUID campaignId, int limit, GuestApplyCountingMode mode) {
         return Boolean.TRUE.equals(transactions.execute(status -> {
             jdbc.update("INSERT INTO public.guest_apply_sessions (guest_hash) VALUES (?) ON CONFLICT DO NOTHING",
                     guestHash);
             // Serialize all quota decisions for this guest, including requests for different campaigns.
-            jdbc.queryForObject("SELECT guest_hash FROM public.guest_apply_sessions WHERE guest_hash = ? FOR UPDATE",
-                    String.class, guestHash);
+            Integer clicks = jdbc.queryForObject(
+                    "SELECT apply_count FROM public.guest_apply_sessions WHERE guest_hash = ? FOR UPDATE",
+                    Integer.class, guestHash);
+            if (mode == GuestApplyCountingMode.CLICKS && clicks != null && clicks >= limit) {
+                return false;
+            }
             Boolean repeat = jdbc.queryForObject("""
                     SELECT EXISTS (SELECT 1 FROM public.guest_campaign_access
                     WHERE guest_hash = ? AND campaign_id = ?)
                     """, Boolean.class, guestHash, campaignId);
-            if (Boolean.TRUE.equals(repeat)) {
+            if (mode == GuestApplyCountingMode.DISTINCT_CAMPAIGNS && Boolean.TRUE.equals(repeat)) {
+                jdbc.update("UPDATE public.guest_apply_sessions SET apply_count = apply_count + 1 WHERE guest_hash = ?",
+                        guestHash);
                 return true;
             }
             Integer count = jdbc.queryForObject(
                     "SELECT count(*) FROM public.guest_campaign_access WHERE guest_hash = ?", Integer.class, guestHash);
-            if (count != null && count >= limit) {
+            if (mode == GuestApplyCountingMode.DISTINCT_CAMPAIGNS && count != null && count >= limit) {
                 return false;
             }
-            jdbc.update("INSERT INTO public.guest_campaign_access (guest_hash, campaign_id) VALUES (?, ?)",
+            jdbc.update("INSERT INTO public.guest_campaign_access (guest_hash, campaign_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
                     guestHash, campaignId);
+            jdbc.update("UPDATE public.guest_apply_sessions SET apply_count = apply_count + 1 WHERE guest_hash = ?",
+                    guestHash);
             return true;
         }));
     }

@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 @Configuration
 @EnableConfigurationProperties(AdrovisSecurityProperties.class)
 public class JwtValidationConfig {
+    /** Verifies signed access tokens and checks current account state before exposing trusted identity. */
 
     @Bean
     public JwtDecoder jwtDecoder(AdrovisSecurityProperties properties) {
@@ -23,8 +24,12 @@ public class JwtValidationConfig {
         AccountStatusClient status = new AccountStatusClient(properties);
         return token -> {
             var jwt = local.decode(token);
-            status.verify(jwt);
-            return jwt;
+            String verifiedEmail = status.verify(jwt);
+            // This local metadata is overwritten from the trusted account response, never trusted from JWT input.
+            java.util.Map<String, Object> claims = new java.util.LinkedHashMap<>(jwt.getClaims());
+            claims.put("account_email", verifiedEmail);
+            return new org.springframework.security.oauth2.jwt.Jwt(jwt.getTokenValue(), jwt.getIssuedAt(),
+                    jwt.getExpiresAt(), jwt.getHeaders(), claims);
         };
     }
 

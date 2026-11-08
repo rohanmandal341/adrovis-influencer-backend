@@ -47,8 +47,13 @@ management:
       show-details: never
 
 app:
+  payment:
+    currency: INR
+    max-webhook-bytes: ${PAYMENT_MAX_WEBHOOK_BYTES:262144}
   guest-apply:
+    # Set 3 or 5 as required. CLICKS counts every allowed Apply request, including the same campaign.
     limit: ${GUEST_APPLY_LIMIT:3}
+    counting-mode: ${GUEST_APPLY_COUNTING_MODE:CLICKS}
     cookie-secure: ${GUEST_APPLY_COOKIE_SECURE:true}
     cookie-same-site: ${GUEST_APPLY_COOKIE_SAME_SITE:Lax}
   backend-base-url: ${BACKEND_BASE_URL:https://adrovis-influencer-backend.onrender.com}
@@ -63,6 +68,13 @@ logging:
   level:
     root: INFO
     com.adrovis.influencer: INFO
+
+
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID}
+  key-secret: ${RAZORPAY_KEY_SECRET}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+
 
 # Separate authentication service: no private signing key or auth database access is needed here.
 adrovis:

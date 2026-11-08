@@ -33,6 +33,7 @@ public record AdrovisSecurityProperties(String issuer, String audience, Resource
             throw new IllegalStateException("Load the trusted public key from a local resource, not a remote URL");
         }
     }
+    /** Rejects insecure endpoints and credential-bearing or ambiguous URLs. */
 
     private static void requireHttps(URI uri) {
         if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null

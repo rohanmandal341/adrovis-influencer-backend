@@ -54,6 +54,27 @@ class JwtValidationTests {
         assertThatThrownBy(() -> decoder.decode("invalid")).isInstanceOf(JwtException.class);
     }
 
+    @Test
+    void rejectsFractionalOverflowAndNonNumericRevocationVersions() {
+        rejects(TokenFixtures.claims().claim("ver", -0.5));
+        rejects(TokenFixtures.claims().claim("ver", 1.5));
+        rejects(TokenFixtures.claims().claim("ver", new java.math.BigInteger("18446744073709551616")));
+        rejects(TokenFixtures.claims().claim("ver", "0"));
+    }
+
+    @Test
+    void rejectsAbbreviatedUuidClaimsRatherThanNormalizingThem() {
+        rejects(TokenFixtures.claims().subject("1-1-1-1-1"));
+        rejects(TokenFixtures.claims().jwtID("1-1-1-1-1"));
+    }
+
+    @Test
+    void rejectsMissingRolesAndExcessiveTokenLifetime() {
+        rejects(TokenFixtures.claims().claim("roles", List.of()));
+        rejects(TokenFixtures.claims().claim("roles", List.of("creator")));
+        rejects(TokenFixtures.claims().expirationTime(Date.from(Instant.now().plusSeconds(3600))));
+    }
+
     private void rejects(JWTClaimsSet.Builder claims) {
         assertThatThrownBy(() -> decoder.decode(TokenFixtures.sign(claims))).isInstanceOf(JwtException.class);
     }

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = CampaignController.class)
 public class GuestApplyExceptionHandler {
+    /** Returns the stable frontend signup trigger without disclosing the external application URL. */
 
     @ExceptionHandler(SignupRequiredException.class)
     public ResponseEntity<Map<String, Object>> signupRequired(SignupRequiredException exception) {
@@ -20,6 +21,7 @@ public class GuestApplyExceptionHandler {
                 "errorCode", "SIGNUP_REQUIRED",
                 "message", exception.getMessage()));
     }
+    /** Returns a retryable failure without bypassing account or data checks. */
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<Map<String, Object>> unavailable(DataAccessException exception) {
         return ResponseEntity.status(503).header("Cache-Control", "no-store").body(Map.of(

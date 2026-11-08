@@ -30,13 +30,42 @@ docker compose up --build
    - `BACKEND_BASE_URL`: `https://your-service-name.onrender.com`
 
 
-## Security-service integration
+## Security integration and API access policy
 
-This backend now verifies access tokens from the separate Adrovis security service. The services
-retain their own databases. No identity table, duplicate login endpoint or migration was added.
-Existing collector records represent collected data, not automatically linked account profiles.
+This Spring Boot 3.3.5 / Java 21 backend verifies tokens from the separate deployed Adrovis security
+service. Business and security databases remain separate. No private JWT key, security DB password,
+Postmark token or master frontend API key is shared with this backend.
 
-Set these variables on THIS backend's Render service:
+### Effective endpoint policy
+
+| API | Guest | CREATOR / BRAND / AGENCY | ADMIN |
+|---|---|---|---|
+| GET /api/v1/campaigns and /{id}, with existing filters | Public | Allowed | Allowed |
+| GET /api/v1/campaigns/{id}/apply | Configured guest budget | Valid account bypasses guest budget | Allowed |
+| POST /api/v1/campaigns/{id}/apply-access | Same guest budget, JSON response | Valid account bypasses guest budget | Allowed |
+| POST /api/v1/inquiries | Public | Allowed | Allowed |
+| GET /api/v1/inquiries and /{id}; PATCH /{id}/status | 401 | 403 | Allowed |
+| POST /api/v1/newsletter/subscribe | 401 | Own verified email only | Own verified email only |
+| GET /api/v1/newsletter/subscribers | 401 | 403 | Allowed |
+| GET /api/v1/agencies | 401 | 403 | Allowed |
+| GET /api/v1/collector/creators, /export, /members; /collector/dashboard/overview | 401 | 403 | Allowed |
+| GET /api/v1/analytics/overview, /sessions, /sessions/{id}, /leads | 401 | 403 | Allowed |
+| POST /api/v1/analytics/track, /heartbeat, /conversion, /lead | Public visitor event ingestion | Allowed | Allowed |
+| POST /api/v1/payments/create-order | 401 | Own account, possessed role | Own account, possessed role |
+| POST /api/v1/payments/verify | 401 | Own account's order only | Own account's order only |
+| GET /api/v1/admin/payments/stats and /transactions | 401 | 403 | Allowed |
+| POST /api/v1/webhooks/razorpay | Mandatory provider HMAC, not a browser Bearer token | Same | Same |
+| GET /api/v1/account/me | 401 | Own identity | Own identity |
+| Health endpoints and Swagger documentation GETs | Public operational metadata | Public | Public |
+| Unlisted routes/methods | Denied by default | Denied by default | Denied by default |
+
+Roles are checked on the server, never accepted from frontend flags. Collector data has no brand
+membership or creator-profile ownership model; future brand/agency access requires an explicit
+resource-permission design, not simply adding those roles to the platform-wide read rule.
+
+### Render / local configuration
+
+Set on this business backend:
 
 ```dotenv
 ADROVIS_AUTH_ISSUER=https://adrovis-influencer-security.onrender.com
@@ -44,177 +73,203 @@ ADROVIS_AUTH_AUDIENCE=adrovis-platform
 ADROVIS_AUTH_PUBLIC_KEY_LOCATION=file:/etc/secrets/adrovis-public.pem
 ADROVIS_AUTH_STATUS_URL=https://adrovis-influencer-security.onrender.com/api/v1/auth/me
 ADROVIS_AUTH_STATUS_TIMEOUT=10s
-ADROVIS_FRONTEND_ORIGIN=https://YOUR_ACTUAL_FRONTEND_DOMAIN
-```
-
-Copy the exact JWT_ISSUER from the security deployment instead of assuming it equals the host URL.
-Use the real frontend origin without trailing slash/path. Comma-separated exact origins are allowed;
-prod requires HTTPS. Local development permits http://localhost:3000. Wildcard controller CORS was
-removed. The old CORS_ALLOWED_ORIGINS setting is superseded by ADROVIS_FRONTEND_ORIGIN.
-
-Add Render Secret File adrovis-public.pem containing ONLY the production public PEM from the
-security project. Never share its private key, mail-provider token or security database password.
-The Git-ignored local public key is .secrets/adrovis-public.pem; for local runs set
-ADROVIS_AUTH_PUBLIC_KEY_LOCATION=file:.secrets/adrovis-public.pem. Keep the existing primary and
-collector database variables. Spring does not automatically load .env files.
-
-Missing trust settings fail startup; configure these before deploying. No OIDC discovery/JWKS
-endpoint is assumed. Key rotation currently needs coordinated public-key distribution.
-
-### Validation and revocation
-
-Every Bearer-authenticated request checks RS256 signature, issuer, audience, expiration, issuance,
-maximum 30-minute lifetime, token_use=access, UUID sub/jti, nonnegative account version and known
-CREATOR/BRAND/AGENCY/ADMIN roles. Onboarding tokens are rejected.
-
-After local validation, the user's token is forwarded only to the fixed configured HTTPS
-/api/v1/auth/me endpoint, which checks current account status/token version in the security DB.
-UUID, verified-email state and roles must match. This rejects subsequent requests after logout,
-password reset or suspension; role changes require fresh credentials. There is no cached result
-or master service password. Redirects are not followed and tokens are not logged.
-
-An unavailable account service returns 503 AUTHENTICATION_UNAVAILABLE and never bypasses validation.
-Invalid/revoked credentials return 401 UNAUTHORIZED; insufficient roles return 403 FORBIDDEN.
-There is one extra HTTPS request per authenticated API request. Render Free cold starts may exceed
-the default 10-second timeout; frontend clients should handle 503 with a retryable message.
-Already-running authorized requests are not retroactively interrupted.
-
-### Route permissions
-
-| Routes | Access |
-|---|---|
-| GET /api/v1/health, /actuator/health and health subpaths | Public |
-| GET /api/v1/agencies, /api/v1/campaigns, /api/v1/campaigns/{id}, /api/v1/campaigns/{id}/apply | Public |
-| POST /api/v1/inquiries, /api/v1/newsletter/subscribe | Public |
-| POST /api/v1/analytics/track, /heartbeat, /conversion, /lead | Public telemetry |
-| GET /api/v1/account/me | Valid account access token |
-| Collector routes, inquiry reads/status changes, subscriber lists, analytics reads, admin routes | ADMIN |
-| GET /swagger-ui.html, /swagger-ui/**, /v3/api-docs/** | Public documentation |
-| Other routes | Denied by default |
-
-Collector endpoints expose platform-wide records and have no ownership/membership model; they are
-ADMIN-only initially. Never grant normal creator/brand accounts unrestricted record access as an
-integration shortcut. Internal collector services and management methods also enforce ADMIN.
-Analytics uses ADMIN Bearer tokens instead of X-Admin-Key. Admin provisioning must remain trusted
-and separate from public registration. Public submission rate limiting remains separate work.
-Actuator exposes only health and never returns detailed infrastructure information.
-
-### Frontend connection and live checks
-
-1. Configure two frontend base URLs: the deployed security API and this business API.
-2. Signup/login/refresh/logout use the security service's existing CSRF and cookie flow. Keep its
-   access token in memory; the security host owns the refresh cookie.
-3. Business requests send Authorization: Bearer <access-token>, without refresh cookies or master keys.
-4. First test GET /api/v1/account/me on THIS backend: expect success, accountId (JWT sub) and roles.
-5. Anonymous requests return 401. A CREATOR requesting collector exports must receive 403.
-6. Logout via the security service, then retry account/me with the old access token: expect 401.
-7. Use a legitimately provisioned ADMIN for internal operations. Swagger's Authorize button accepts
-   the access token for protected operations. An X-Admin-Key alone no longer grants access.
-
-account/me is an identity connection check, not a creator business profile. Future user-owned
-operations require an explicit account_id relationship and resource authorization; never silently
-link collected creator records solely by email. Frontend code has not been edited because its
-repository was not supplied. No push or deployment of this backend was performed by this task.
-End-to-end deployed testing and browser cookie behavior still need verification.
-
-### Verification
-
-Run mvn verify with Java 21. Tests use disposable generated RSA keys, mocked account HTTP responses,
-and mocked repositories. They never connect to Supabase or send email. Local verification used
-Java 24 targeting 21 with command-only -Dmaven.compiler.proc=full and -Dlombok.version=1.18.48
-for the installed compiler. Production POM dependency versions and the Java 21 Docker build remain
-unchanged. The CI workflow verifies Java 21 independently when pushed; it has not run remotely yet.
-Tests cover signatures/claims, stale roles/revocation, provider failures, protected routes,
-actual public inquiry/newsletter contracts, approved/denied CORS and the identity API.
-
-
-## Guest campaign Apply allowance
-
-GET /api/v1/campaigns/{id}/apply still redirects (302) to the external form for permitted requests.
-Guests get access to three DISTINCT campaigns per browser identity. Reopening a previously permitted
-campaign does not consume another slot and still works after the limit. The fourth distinct campaign
-returns 403 with success=false and errorCode=SIGNUP_REQUIRED, without revealing the destination.
-Valid completed-account Bearer tokens bypass the guest quota; invalid tokens return 401 rather than
-silently falling back to a guest. Other JWT/permission protections remain unchanged.
-
-A cryptographically random 256-bit cookie (adrovis_guest_apply) identifies the guest. Only its SHA-256
-hash is stored in the primary database. A per-guest row lock and unique guest/campaign key prevent
-simultaneous requests from exceeding the limit. Quota writes and click tracking share the primary
-transaction. Campaign lookup/destination validation happens before the allowance is consumed.
-No raw cookies, IP addresses or personal data are stored in these quota tables.
-
-### Required database setup BEFORE deployment
-
-Run src/main/resources/db/manual/001_guest_campaign_allowance.sql once in the CORE backend's PRIMARY
-PostgreSQL database (not the separate security Supabase DB or collector DB). It adds public.guest_apply_sessions
-and public.guest_campaign_access, foreign keys, indexes and RLS/browser-role restrictions. Run as the
-backend table owner; a separate runtime role needs explicit backend-only grants and an RLS policy.
-This backend has no migration framework, so the SQL file is NOT run automatically at startup.
-The script has only been executed on a disposable local database during this task.
-No production database was modified. Apply these tables before deploying this feature.
-
-Configuration:
-
-```dotenv
+ADROVIS_FRONTEND_ORIGIN=https://brandcollabz.in,https://www.brandcollabz.in
 GUEST_APPLY_LIMIT=3
+GUEST_APPLY_COUNTING_MODE=CLICKS
 GUEST_APPLY_COOKIE_SECURE=true
-GUEST_APPLY_COOKIE_SAME_SITE=Lax
+GUEST_APPLY_COOKIE_SAME_SITE=None
+PAYMENT_MAX_WEBHOOK_BYTES=262144
 ```
 
-Local HTTP tests need GUEST_APPLY_COOKIE_SECURE=false. Production requires true. If frontend/API
-are on different sites, None is needed with Secure; browser third-party-cookie restrictions can
-still block guest cookies. Same-site custom frontend/API domains or a same-origin proxy are more
-reliable. CORS now permits credentials only for exact approved frontend origins. The cookie is
-host-only, HttpOnly, scoped to /api/v1/campaigns and expires after 30 days without extending on each
-click. Clearing cookies or switching browsers resets the guest identity. This is a soft signup
-allowance, not a guaranteed per-person limit or protection of an externally shared Google Form URL.
-Campaign deletion cascades its usage rows. Database history is retained until explicitly cleaned up;
-operators can remove sessions older than 30 days when defining their retention policy.
+The issuer MUST equal JWT_ISSUER on the security service. Add Render Secret File adrovis-public.pem
+with the matching production PUBLIC PEM. For native local runs use file:.secrets/adrovis-public.pem;
+for Docker bind-mount it and configure its in-container path. The file is ignored by Git and does
+not arrive through a clone. Keep the existing primary/collector DB and Razorpay credentials.
+Spring does not automatically load .env; .env.example contains placeholders only.
+Local development YAML now also reads SUPABASE_DB_PASSWORD and COLLECTOR_DB_PASSWORD instead of
+literal passwords. Set these in the terminal, IDE or Docker environment before running. Existing
+running containers are not modified by this configuration cleanup. Production credential fallbacks
+were removed: explicitly set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET rather
+than relying on fallback credentials.
 
-### Frontend Apply button
+CORS accepts exact configured frontend origins without trailing paths/slashes. Payment-controller
+wildcards were removed so they cannot broaden the central policy. Credentialed requests are enabled
+for the core guest cookie; the security host still owns its separate refresh cookie. Native local
+HTTP needs GUEST_APPLY_COOKIE_SECURE=false and SameSite=Lax. SameSite=None requires Secure/HTTPS.
+Browser third-party-cookie blocking may still prevent quota persistence across unrelated domains;
+same-site custom frontend/API domains or a same-origin proxy are more reliable.
 
-POST /api/v1/campaigns/{id}/apply-access provides the same gate as JSON, avoiding automatic redirects
-while the frontend decides whether to show signup. On success it returns 200 with success=true and
-applicationUrl. On exhaustion it returns 403 SIGNUP_REQUIRED. Database failures return a sanitized
-503 APPLICATION_ACCESS_UNAVAILABLE. Neither denied response includes the external destination.
-Both paths share the same quota, so calling the legacy GET does not bypass the gate. Because legacy
-GET consumes a distinct grant, crawlers/prefetching can count; use POST for the actual button.
+### Authentication and current account validation
 
-```javascript
-async function handleApply(campaignId, accessToken) {
-  const response = await fetch(
-    `${BUSINESS_API_URL}/api/v1/campaigns/${encodeURIComponent(campaignId)}/apply-access`,
-    {
-      method: 'POST',
-      credentials: 'include',
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-    }
-  );
-  const body = await response.json();
-  if (response.status === 403 && body.errorCode === 'SIGNUP_REQUIRED') {
-    // Use your frontend router; preserve the campaign for after verification/onboarding.
-    window.location.assign(`/signup?campaignId=${encodeURIComponent(campaignId)}`);
-    return;
-  }
-  if (!response.ok) {
-    throw new Error(body.message || 'Application access failed. Please try again.');
-  }
-  window.location.assign(body.applicationUrl);
-}
-```
+JWTs must pass RS256 signature, issuer, audience, expiry/issuance, access-token type, UUID identity,
+account-version and known-role checks. Onboarding tokens are rejected. After local verification,
+the backend forwards the token only to the configured HTTPS /api/v1/auth/me endpoint. Current UUID,
+verified-email state and roles must match. The verified email is added only as transient server-side
+principal metadata and overwrites any input claim; it is not put into a newly issued JWT here.
 
-The frontend repository has not been provided, so this button handler/signup navigation has NOT been
-installed there. After successful signup/verification/onboarding, retry with the access token; normal
-anchor navigation does not attach a Bearer header. Never trust an isLoggedIn flag in a request body.
-The core guest cookie is separate from the security service's HttpOnly refresh cookie.
+Logout, reset or suspension invalidates subsequent protected requests through this uncached check.
+401 means invalid/revoked credentials; 403 means insufficient role/ownership; 503 means identity
+validation is unavailable. No error falls back to anonymous access. There is one extra HTTPS call
+per Bearer request. Render Free cold starts may exceed the configured timeout; clients must retry
+503 rather than bypass security. Existing in-flight requests are not retroactively interrupted.
 
-### Guest allowance tests
+### Guest Apply allowance: configurable 3 or 5 requests
 
-Unit/HTTP tests cover signup-required responses on both paths, hashed/scoped cookies, authenticated
-bypass, invalid token rejection and missing-campaign behavior. Real local PostgreSQL tests exercise
-three allowed/fourth denied, repeated campaigns, separate guests, 12 simultaneous different/same
-campaign requests and transaction rollback. Set GUEST_APPLY_TEST_DATABASE_URL to a disposable local
-guest_apply_test DB only; the tests intentionally reject other databases and truncate their fixture
-tables. Optional GUEST_APPLY_TEST_DATABASE_PASSWORD is for that disposable DB. Without the URL,
-five database tests skip; the Java 21 CI supplies a disposable PostgreSQL 16 service to run them.
-Local Java 24 testing additionally used -Dnet.bytebuddy.experimental=true for the old test mock agent.
+In application.yml, app.guest-apply.limit defaults to ${GUEST_APPLY_LIMIT:3}; set the environment
+variable to 5 for five free requests. CLICKS is the default counting mode: every permitted guest
+Apply request counts, INCLUDING reopening the same campaign. The fourth/sixth request returns
+403 SIGNUP_REQUIRED. DISTINCT_CAMPAIGNS is an optional compatibility policy where repeats do not
+consume a new slot. It is no longer the default.
+
+The Secure HttpOnly host-only cookie adrovis_guest_apply carries a random 256-bit guest identity;
+only its SHA-256 hash is stored. A per-guest row lock and database transaction prevent concurrent
+requests from exceeding the selected policy. Quota and click tracking share the primary transaction.
+Campaign lookup and URL validation happen before usage is consumed. Invalid Bearer tokens return
+401, not a new guest allowance. Clearing cookies, changing browser or waiting for the 30-day cookie
+to expire creates a new identity: this is a soft signup trial, not a per-person anti-fraud guarantee.
+Do not issue parallel first-click requests before the initial guest cookie is stored.
+
+Legacy GET /api/v1/campaigns/{id}/apply retains its 302 redirect only when allowed; both routes
+return no-store responses and enforce the same gate. Use POST /{id}/apply-access for frontend buttons,
+because GET prefetchers/crawlers can otherwise consume guest requests. POST success returns
+{success:true,applicationUrl:...}; exhausted guests receive {success:false,errorCode:"SIGNUP_REQUIRED",message:...}.
+Frontend code must use credentials:'include', show signup/login on this specific 403, preserve the
+campaign ID, and retry with an access token after verification/onboarding. This task does not edit
+the frontend repository or create the signup popup itself. External form URLs, once disclosed, can
+be bookmarked/shared; this gate does not secure submissions at Google Forms.
+
+### Payments: preserved flow with identity boundaries
+
+All user-facing payment routes require a valid access token. Each new transaction stores account_id
+from the trusted principal. The submitted email must match the verified account email, and the
+submitted userRole must be one of the caller's actual roles. Admin status does not permit verifying
+another person's order through the customer endpoint. Missing/unowned/unlinked orders all return
+404 without revealing who owns them. Historical account_id=NULL rows remain admin-readable and
+require reviewed linking; they are never silently linked by email.
+
+The frontend-supplied plan and price contract is intentionally retained at the user's request.
+Positive amounts and two-decimal numeric precision are enforced, and paise conversion is exact.
+There is NO authoritative server-side plan-price catalogue in this scope. The code therefore does
+not prevent a signed-in client from submitting a different positive price. Create-order retries
+also do not have a complete durable idempotency contract; any such product changes need separate
+agreement. Preserve that distinction during production sign-off.
+
+Checkout signature verification uses the stored order ID and gateway secret. Invalid signatures
+never mutate status; repeated identical verified callbacks are idempotent, and successful/refunded
+transactions cannot be overwritten by a different payment ID or a late success notification.
+The existing checkout SUCCESS semantics are preserved; gateway capture/settlement/reconciliation
+must still be validated in the real Razorpay test environment before billing production sign-off.
+
+Razorpay callbacks cannot carry a customer's JWT. The only payment authentication exception is
+POST /api/v1/webhooks/razorpay, where the exact raw UTF-8 body MUST pass constant-time HMAC-SHA256
+verification. Blank secrets, missing/malformed/wrong signatures fail closed. Signed-body hashes
+and a database unique claim deduplicate concurrent retries. Captures lock the order and match its
+stored amount/currency before updating it. Unknown orders return a retryable error rather than
+acknowledging and losing an event. Claims roll back if processing fails. Other signed event types
+retain the existing audit-only scope; this does not add refund/subscription business workflows.
+
+Admin payment lists use a DTO instead of returning the gateway signature in an entity. Existing
+admin table fields are preserved and accountId is additive. No provider response body, secret,
+request token, raw signature or payment email is written to application logs by the new paths.
+Webhook payload storage is retained from the original payment audit design and needs an operator
+retention/access policy. The configured webhook size limit is an application parsing limit, not
+a replacement for upstream request-size or abuse controls.
+
+### Database rollout: manual, additive and reviewed
+
+This backend has no migration runner. Apply these scripts to the CORE primary database before
+deployment; none were applied to Supabase by this task:
+
+1. db/manual/001_guest_campaign_allowance.sql: original guest tables, only if not already applied.
+2. db/manual/002_payment_account_ownership.sql: adds nullable account_id and indexes to EXISTING
+   payment tables. A unique event_id index supports atomic webhook retries. Review any historical
+   duplicate event IDs before applying; do not delete payment history as a shortcut. This script
+   also enables RLS and revokes PUBLIC/anon/authenticated payment-table access. A separate backend
+   runtime role needs explicit grants and a backend-only RLS policy; owner/service credentials must
+   be reviewed before applying.
+3. db/manual/003_guest_apply_click_counter.sql: adds apply_count and seeds at least the previous
+   distinct-grant count without reducing existing counters. Earlier history cannot reconstruct
+   clicks that were never recorded. The old script was not edited to change applied schemas.
+
+There is no cross-database foreign key to security accounts. Existing payment tables must already
+exist from the payment module's deployment. No campaign, collector, inquiry or newsletter table
+was rebuilt. Runtime role privileges/RLS must be reviewed for the actual database role before
+production; API route protection does not replace database access policies.
+
+### Review notes: what was removed or changed, and why
+
+| Previous behavior | Replacement and reason |
+|---|---|
+| Frontend-only role decisions | Backend filters plus method guards; clients can bypass frontend UI |
+| Public newsletter subscription | Authenticated own verified email; requires signup and prevents subscribing another address |
+| Public agency listing | Admin-only per current business scope |
+| Wildcard CORS on payment controllers | One exact origin allowlist; wildcard annotations could broaden intended browser access |
+| Blank webhook secret accepted any signature | Fail-closed raw-body HMAC; missing configuration must not authorize money updates |
+| Read-then-save webhook dedupe | Unique atomic database claim; concurrent deliveries must not process twice |
+| Payment ownership inferred from request email | Stored account UUID; user-controlled contact fields are not authorization |
+| Invalid checkout signature marked payment failed | No state mutation; forged input must not change financial state |
+| Raw payment entity returned to Admin | DTO preserving table fields while excluding the gateway signature |
+| Provider/SQL exception messages echoed in 500s | Stable sanitized HTTP errors, including method-authorization 403 and input-validation 400 |
+| Distinct-campaign default guest policy | Configurable click counter matching the latest 3/5-click requirement |
+| Legacy X-Admin-Key analytics access | Account ADMIN authority (removed in the earlier integration commit) |
+
+Controller/business filters, inquiry creation, existing campaign filters, Razorpay order creation,
+and supported capture processing remain in place. Existing staged changes were not reset or committed.
+Method comments explain security decisions and exceptions instead of claiming blanket readiness.
+
+### Verification and release checks
+
+The suite exercises the actual controller authorization matrix for guests and all four roles,
+verified newsletter consent, payment owner/role checks, real signed token claims and webhook HMAC,
+callback state guards, PostgreSQL/JPA ownership round-trips, atomic webhook claims/rollbacks, and
+concurrent click/distinct guest budgets. No test charges money, sends email, or connects to Supabase.
+Java 21 CI uses a disposable PostgreSQL 16 database. Set GUEST_APPLY_TEST_DATABASE_URL only to a
+disposable localhost guest_apply_test database; DB tests reject other URLs and truncate fixture tables.
+Without that test URL the database tests skip; production/local application settings are not test credentials.
+
+Before release: review the role table with the frontend owner; apply reviewed SQL; configure actual
+trust/key/origin/provider secrets; test real verified-account login/logout; test the newsletter and
+signup popup in a browser; run Razorpay TEST-mode checkout and signed callback/retry tests; and review
+public inquiry/telemetry abuse limits and DB grants. Public telemetry remains intentionally anonymous
+for guest measurement and is not proof of a person's identity. This work does not assert that external
+email, Google login, real payment settlement or the deployed frontend were verified.
+
+No push or deployment is performed by this task. Only backend code, tests, docs and additive SQL are
+updated on the current feature branch. Deploy changes only after the required configuration/schema
+is ready; simply merging code into an auto-deployed main branch can otherwise fail startup.
+
+
+### Executed verification (8 November 2026)
+
+A clean build and subsequent full verify passed on Java 21.0.7 with disposable PostgreSQL 16:
+93 tests, 0 failures, 0 errors, 0 skipped. This includes all four account roles, 14 management GET
+routes, real webhook HMAC, payment service guards, actual JPA locking/ownership/transaction rollback,
+payment-table RLS for a non-owner browser role, and configurable 3/5-click guest concurrency.
+Gateway SDK calls were mocked; no real payments, emails, Supabase changes or deployed/frontend
+requests were made. The original primary/collector business datasets were not used by these tests.
+The disposable review containers are task-owned and removed after verification. Reports are in
+target/surefire-reports and target/security-review-verification.txt (local build outputs, not Git files).
+The latest environment-only credential cleanup is repackaged separately without repeating unchanged
+domain tests. Run-time provider secrets must be supplied explicitly before deployment.
+
+
+## Adversarial regression review (8 November 2026)
+
+Added eight negative tests and reproduced three validation gaps before fixing them:
+
+- JWT versions were truncated or overflowed through `Number.longValue()`; only non-negative JSON integers in the signed-long range are now accepted.
+- Java's UUID parser accepted abbreviated identifiers; subject and token ID now require the full UUID representation.
+- Signed webhook IDs were coerced from non-string JSON and lacked a length bound; malformed fields now return 400 before order lookup rather than a misleading retryable 503.
+
+These were input-contract gaps, not demonstrated signature or unauthenticated access bypasses.
+Additional regression checks cover role/header spoofing, query-string tokens, method overrides,
+oversized webhook payloads and malformed signed JSON. Full Maven verify passed on Java 21.0.7
+with disposable PostgreSQL 16: 101 tests, zero failures, errors or skips. Existing payment
+ownership, callback replay/rollback and concurrent 3/5 guest click checks remain included.
+
+No shared database, running application container, frontend or deployed service was changed.
+Apply pending manual SQL and rebuild the application image before local/live acceptance.
+This pass does not establish live gateway settlement or remove the existing frontend-price,
+create-order idempotency, public ingestion abuse-control and cookie-reset trial limitations.
+Local reproduction logs: `.test-runtime/adversarial-before.log`,
+`.test-runtime/adversarial-webhook-repro.log` and `.test-runtime/adversarial-final.log`.

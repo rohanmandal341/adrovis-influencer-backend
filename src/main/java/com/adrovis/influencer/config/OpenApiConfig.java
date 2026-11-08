@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OpenApiConfig {
 
+    /** Documents Bearer authentication without placing secrets or account data into the public schema. */
     @Bean
     public OpenAPI customOpenAPI() {
         return new OpenAPI()

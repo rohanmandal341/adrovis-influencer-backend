@@ -145,6 +145,7 @@ public class AnalyticsController {
     // =====================================================================
     // PUBLIC INGESTION ENDPOINTS
     // =====================================================================
+    /** Retains anonymous visitor collection; this ingestion route must work before signup. */
 
     @PostMapping("/track")
     @Transactional
@@ -201,6 +202,7 @@ public class AnalyticsController {
 
         return ResponseEntity.ok(ApiResponse.ok("Tracked"));
     }
+    /** Updates guest visit duration without exposing analytics read data. */
 
     @PostMapping("/heartbeat")
     @Transactional
@@ -211,6 +213,7 @@ public class AnalyticsController {
                 Math.max(0, req.getActiveDwellSeconds()));
         return ResponseEntity.ok(ApiResponse.ok("Alive"));
     }
+    /** Preserves the existing anonymous application-conversion event collection. */
 
     @PostMapping("/conversion")
     @Transactional
@@ -239,6 +242,7 @@ public class AnalyticsController {
     // =====================================================================
     // ADMIN ENDPOINTS
     // =====================================================================
+    /** Returns existing aggregate dashboard data only through its Admin-protected read endpoint. */
 
     @GetMapping("/overview")
     @PreAuthorize("hasRole('ADMIN')")
@@ -327,6 +331,7 @@ public class AnalyticsController {
 
         return ResponseEntity.ok(ApiResponse.ok(out));
     }
+    /** Preserves session filtering and pagination while preventing non-Admin access to visitor records. */
 
     @GetMapping("/sessions")
     @PreAuthorize("hasRole('ADMIN')")
@@ -409,6 +414,7 @@ public class AnalyticsController {
 
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
+    /** Returns one visitor session only after Admin authorization. */
 
     @GetMapping("/sessions/{id}")
     @PreAuthorize("hasRole('ADMIN')")
@@ -419,6 +425,7 @@ public class AnalyticsController {
         return ResponseEntity.ok(ApiResponse.ok(analyticsRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"))));
     }
+    /** Returns consented visitor leads only to Admin accounts. */
 
     @GetMapping("/leads")
     @PreAuthorize("hasRole('ADMIN')")
@@ -431,20 +438,24 @@ public class AnalyticsController {
     // =====================================================================
     // HELPERS
     // =====================================================================
+    /** Reads an existing numeric aggregate with the original fallback behavior. */
 
     private static double num(Map<String, Object> map, String key, double defaultValue) {
         if (map == null) return defaultValue;
         Object v = map.get(key);
         return v instanceof Number n ? n.doubleValue() : defaultValue;
     }
+    /** Keeps dashboard numeric formatting stable. */
 
     private static double round1(double v) {
         return Math.round(v * 10.0) / 10.0;
     }
+    /** Keeps existing empty-list response behavior when an aggregate query returns no rows. */
 
     private static <T> List<T> safe(List<T> list) {
         return list != null ? list : Collections.emptyList();
     }
+    /** Bounds analytics text to the existing storage lengths. */
 
     private static String clip(String s, int max) {
         if (s == null) return null;
@@ -463,10 +474,12 @@ public class AnalyticsController {
         if (p.isEmpty()) p = "/";
         return p.length() > 512 ? p.substring(0, 512) : p;
     }
+    /** Escapes user filter wildcard characters for the existing analytics search logic. */
 
     private static String escapeLike(String s) {
         return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
+    /** Extracts a referrer domain for analytics classification, not authorization. */
 
     private static String extractDomain(String url) {
         if (url == null) return null;
@@ -480,12 +493,14 @@ public class AnalyticsController {
             return null;
         }
     }
+    /** Reads optional analytics hints with the existing fallback behavior; headers do not grant privileges. */
 
     private String headerOrDefault(HttpServletRequest req, String primary, String secondary, String fallback) {
         String v = req.getHeader(primary);
         if (v == null || v.isBlank()) v = req.getHeader(secondary);
         return (v == null || v.isBlank()) ? fallback : v.trim();
     }
+    /** Keeps language classification independent of account authorization. */
 
     private String extractLanguage(HttpServletRequest req) {
         String h = req.getHeader("Accept-Language");
@@ -493,6 +508,7 @@ public class AnalyticsController {
         String first = h.split(",")[0].split(";")[0].trim();
         return clip(first, 16);
     }
+    /** Preserves visitor attribution; forwarded visitor hints are not used as an account credential. */
 
     private String extractClientIp(HttpServletRequest request) {
         String ip = request.getHeader("CF-Connecting-IP");
@@ -519,6 +535,7 @@ public class AnalyticsController {
     }
 
     // ---------- user-agent parsing ----------
+    /** Preserves the existing device classification logic. */
 
     private String detectDeviceType(String ua) {
         if (ua == null) return "Desktop";
@@ -528,6 +545,7 @@ public class AnalyticsController {
         if (l.contains("mobile") || l.contains("android") || l.contains("iphone")) return "Mobile";
         return "Desktop";
     }
+    /** Preserves the existing operating-system classification logic. */
 
     private String detectOs(String ua) {
         if (ua == null) return "Other";
@@ -539,6 +557,7 @@ public class AnalyticsController {
         if (l.contains("linux")) return "Linux";
         return "Other";
     }
+    /** Preserves the existing browser classification logic. */
 
     private String detectBrowser(String ua) {
         if (ua == null) return "Other";
@@ -572,6 +591,7 @@ public class AnalyticsController {
     }
 
     // ---------- marketing channel classification ----------
+    /** Preserves the existing traffic-channel attribution rules. */
 
     private String classifyChannel(String utmSource, String utmMedium, String referrerDomain, String inAppSource) {
         String src = utmSource == null ? "" : utmSource.toLowerCase(Locale.ROOT);

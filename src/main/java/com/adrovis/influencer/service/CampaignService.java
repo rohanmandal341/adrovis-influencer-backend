@@ -27,6 +27,7 @@ public class CampaignService {
 
     @Value("${app.backend-base-url:https://adrovis-influencer-backend.onrender.com}")
     private String backendBaseUrl;
+    /** Preserves campaign search filters, paging and public response mapping. */
 
     @Transactional(readOnly = true)
     public Page<PublicCampaignResponse> getFilteredCampaigns(CampaignFilterRequest filter) {
@@ -45,6 +46,7 @@ public class CampaignService {
         );
         return entities.map(this::mapToPublicResponse);
     }
+    /** Preserves active campaign lookup and view tracking for public discovery. */
 
     @Transactional
     public PublicCampaignResponse getCampaignById(UUID id) {
@@ -54,6 +56,7 @@ public class CampaignService {
         campaignRepository.incrementViewsCount(id);
         return mapToPublicResponse(campaign);
     }
+    /** Rejects missing or invalid external links before any guest allowance is consumed. */
 
     @Transactional(readOnly = true)
     public String getApplicationDestination(UUID id) {
@@ -71,6 +74,7 @@ public class CampaignService {
         }
         return destination;
     }
+    /** Records only allowed application clicks within the primary transaction. */
 
     @Transactional
     public String trackAndGetApplicationUrl(UUID id) {
@@ -79,6 +83,7 @@ public class CampaignService {
         log.info("Application click recorded for campaign ID: {}", id);
         return destination;
     }
+    /** Preserves the public campaign DTO and proxy link rather than returning persistence entities. */
 
     @SuppressWarnings("unchecked")
     private PublicCampaignResponse mapToPublicResponse(CampaignEntity entity) {

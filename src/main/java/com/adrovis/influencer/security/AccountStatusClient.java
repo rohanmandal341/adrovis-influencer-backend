@@ -29,6 +29,7 @@ final class AccountStatusClient {
         this.properties = properties;
         this.client = builder.build();
     }
+    /** Uses bounded HTTPS timeouts and disables redirects so Bearer credentials cannot follow another host. */
 
     private static RestClient.Builder builder(AdrovisSecurityProperties properties) {
         HttpClient http = HttpClient.newBuilder().connectTimeout(properties.statusTimeout())
@@ -38,7 +39,8 @@ final class AccountStatusClient {
         return RestClient.builder().requestFactory(factory);
     }
 
-    void verify(Jwt jwt) {
+    /** Validates current status and returns verified contact metadata without retaining the raw response. */
+    String verify(Jwt jwt) {
         Map<?, ?> body;
         try {
             body = client.get().uri(properties.statusUrl())
@@ -66,12 +68,18 @@ final class AccountStatusClient {
                 || !roles.equals(Set.copyOf(jwt.getClaimAsStringList("roles")))) {
             throw rejected();
         }
+        if (!(user.get("email") instanceof String email) || email.isBlank()) {
+            throw unavailable();
+        }
+        return email.trim().toLowerCase(Locale.ROOT);
     }
+    /** Builds a safe invalid-token outcome without returning the provider response. */
 
     private JwtValidationException rejected() {
         return new JwtValidationException("Account credentials are no longer valid",
                 List.of(new OAuth2Error("invalid_token", "Account credentials are no longer valid", null)));
     }
+    /** Returns a retryable failure without bypassing account or data checks. */
 
     private JwtException unavailable() {
         return new JwtException("Account validation is unavailable");

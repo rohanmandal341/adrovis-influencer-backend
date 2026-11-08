@@ -20,20 +20,20 @@ class GuestApplyServiceTests {
 
     private final CampaignService campaigns = mock(CampaignService.class);
     private final GuestApplyRepository guests = mock(GuestApplyRepository.class);
-    private final CampaignApplyAccessService service = new CampaignApplyAccessService(campaigns, guests, 3);
+    private final CampaignApplyAccessService service = new CampaignApplyAccessService(campaigns, guests, 3, GuestApplyCountingMode.CLICKS);
     private final UUID campaign = UUID.randomUUID();
 
     @Test
     void allowsAGuestAndRecordsOnlyAcceptedClicks() {
-        when(guests.allow("hash", campaign, 3)).thenReturn(true);
+        when(guests.allow("hash", campaign, 3, GuestApplyCountingMode.CLICKS)).thenReturn(true);
         when(campaigns.trackAndGetApplicationUrl(campaign)).thenReturn("https://forms.example.com/apply");
         assertThat(service.grant(campaign, "hash", false)).isEqualTo("https://forms.example.com/apply");
-        verify(guests).allow("hash", campaign, 3);
+        verify(guests).allow("hash", campaign, 3, GuestApplyCountingMode.CLICKS);
     }
 
     @Test
     void blocksTheFourthGuestCampaignBeforeTrackingOrReturningADestination() {
-        when(guests.allow("hash", campaign, 3)).thenReturn(false);
+        when(guests.allow("hash", campaign, 3, GuestApplyCountingMode.CLICKS)).thenReturn(false);
         assertThatThrownBy(() -> service.grant(campaign, "hash", false))
                 .isInstanceOf(SignupRequiredException.class);
         verify(campaigns, never()).trackAndGetApplicationUrl(any());
@@ -51,6 +51,6 @@ class GuestApplyServiceTests {
         when(campaigns.getApplicationDestination(campaign)).thenThrow(new ResourceNotFoundException("Not found"));
         assertThatThrownBy(() -> service.grant(campaign, "hash", false))
                 .isInstanceOf(ResourceNotFoundException.class);
-        verify(guests, never()).allow(anyString(), any(), anyInt());
+        verify(guests, never()).allow(anyString(), any(), anyInt(), any());
     }
 }

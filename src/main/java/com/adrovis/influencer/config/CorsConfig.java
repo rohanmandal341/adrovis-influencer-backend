@@ -15,6 +15,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 public class CorsConfig {
 
+    /** Applies one exact browser-origin policy; controller wildcards must not broaden it. */
     @Bean
     public CorsConfigurationSource coreCorsSource(
             @Value("${adrovis.frontend-origin}") String configured, Environment environment) {

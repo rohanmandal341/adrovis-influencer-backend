@@ -96,6 +96,6 @@ class AccountStatusClientTests {
 
     private String body(String id, String role) {
         return "{\"success\":true,\"user\":{\"id\":\"" + id
-                + "\",\"isEmailVerified\":true,\"roles\":[\"" + role + "\"]}}";
+                + "\",\"email\":\"user@example.com\",\"isEmailVerified\":true,\"roles\":[\"" + role + "\"]}}";
     }
 }

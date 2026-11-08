@@ -38,7 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(controllers = {HealthController.class, InquiryController.class, NewsletterController.class,
         AccountConnectionController.class}, properties = {"adrovis.frontend-origin=https://app.example.com",
         "spring.profiles.active=test"})
-@Import({SecurityConfig.class, CorsConfig.class})
+@Import({SecurityConfig.class, CorsConfig.class, CurrentAccount.class})
 class RouteSecurityTests {
 
     @Autowired
@@ -112,10 +112,13 @@ class RouteSecurityTests {
     }
 
     @Test
-    void preservesPublicSubscription() throws Exception {
+    void requiresSignupForNewsletterSubscription() throws Exception {
         when(subscribers.existsByEmailIgnoreCase(anyString())).thenReturn(true);
         mvc.perform(post("/api/v1/newsletter/subscribe").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"user@example.com\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/newsletter/subscribe").header("Authorization", "Bearer creator-token")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"user@example.com\"}"))
                 .andExpect(status().isOk());
     }
 
@@ -141,9 +144,29 @@ class RouteSecurityTests {
                 .andExpect(jsonPath("$.errorCode").value("AUTHENTICATION_UNAVAILABLE"));
     }
 
+    @Test
+    void browserRoleHeadersAndQueryTokensCannotGrantAdminAccess() throws Exception {
+        mvc.perform(get("/api/v1/inquiries").header("X-Role", "ADMIN")
+                        .param("access_token", "admin-token").param("role", "ADMIN"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/inquiries").header("Authorization", "Bearer creator-token")
+                        .header("X-Role", "ADMIN").param("role", "ADMIN"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void publicReadRoutesDoNotAllowMutationOrMethodOverride() throws Exception {
+        mvc.perform(post("/api/v1/campaigns").header("Authorization", "Bearer creator-token"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/inquiries/export").header("Authorization", "Bearer creator-token")
+                        .header("X-HTTP-Method-Override", "GET"))
+                .andExpect(status().isForbidden());
+    }
+
     private Jwt jwt(String role) {
         return Jwt.withTokenValue("fixture").header("alg", "RS256").subject(TokenFixtures.ACCOUNT)
                 .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(600))
-                .claim("roles", List.of(role)).claim("token_use", "access").build();
+                .claim("roles", List.of(role)).claim("token_use", "access")
+                .claim("account_email", "user@example.com").build();
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 public class CollectorDashboardController {
 
     private final CollectorDashboardService dashboardService;
+    /** Returns existing aggregate dashboard data only through its Admin-protected read endpoint. */
 
     @GetMapping("/overview")
     public ResponseEntity<DashboardOverviewDto> getOverview(

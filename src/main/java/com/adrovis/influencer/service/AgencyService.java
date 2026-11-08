@@ -1,5 +1,6 @@
 package com.adrovis.influencer.service;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.adrovis.influencer.dto.AgencyResponse;
 import com.adrovis.influencer.entity.AgencyEntity;
 import com.adrovis.influencer.repository.AgencyRepository;
@@ -11,10 +12,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
+@PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class AgencyService {
 
     private final AgencyRepository agencyRepository;
+    /** Preserves agency retrieval/mapping while enforcing the current Admin-only service boundary. */
 
     @Transactional(readOnly = true)
     public List<AgencyResponse> getAllAgencies() {

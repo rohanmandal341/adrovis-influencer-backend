@@ -23,6 +23,7 @@ public class CollectorCreatorController {
 
     private final CollectorCreatorService creatorService;
     private final CollectorTeamMemberRepository memberRepo;
+    /** Preserves collector filters and pagination; the route remains Admin-only until membership is modeled. */
 
     @GetMapping
     public ResponseEntity<CreatorTableResponse> getCreators(
@@ -52,6 +53,7 @@ public class CollectorCreatorController {
 
         return ResponseEntity.ok(creatorService.getCreatorsTable(req));
     }
+    /** Preserves CSV generation while requiring Admin access to the platform-wide dataset. */
 
     @GetMapping("/export")
     public ResponseEntity<String> exportCsv(
@@ -77,6 +79,7 @@ public class CollectorCreatorController {
                 .contentType(MediaType.parseMediaType("text/csv"))
                 .body(csvData);
     }
+    /** Returns internal collector team records only behind the Admin authorization boundary. */
 
     @GetMapping("/members")
     public ResponseEntity<List<CollectorTeamMember>> getMembers() {

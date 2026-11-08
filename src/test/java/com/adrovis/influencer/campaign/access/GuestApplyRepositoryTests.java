@@ -39,6 +39,9 @@ class GuestApplyRepositoryTests {
             sql = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         }
         jdbc.execute(sql);
+        try (var stream = new ClassPathResource("db/manual/003_guest_apply_click_counter.sql").getInputStream()) {
+            jdbc.execute(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        }
         jdbc.execute("TRUNCATE public.guest_campaign_access, public.guest_apply_sessions, public.campaigns CASCADE");
         for (int i = 0; i < 12; i++) {
             UUID id = UUID.randomUUID();
@@ -51,10 +54,10 @@ class GuestApplyRepositoryTests {
     @Test
     void allowsThreeDistinctCampaignsRejectsTheFourthAndPreservesRetries() {
         for (int i = 0; i < 3; i++) {
-            assertThat(repository.allow(guest, campaigns.get(i), 3)).isTrue();
+            assertThat(allow(guest, campaigns.get(i), 3)).isTrue();
         }
-        assertThat(repository.allow(guest, campaigns.get(3), 3)).isFalse();
-        assertThat(repository.allow(guest, campaigns.get(0), 3)).isTrue();
+        assertThat(allow(guest, campaigns.get(3), 3)).isFalse();
+        assertThat(allow(guest, campaigns.get(0), 3)).isTrue();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM public.guest_campaign_access", Integer.class)).isEqualTo(3);
     }
 
@@ -62,7 +65,7 @@ class GuestApplyRepositoryTests {
     void simultaneousDifferentCampaignsCannotExceedTheAllowance() throws Exception {
         try (var executor = Executors.newFixedThreadPool(8)) {
             List<Callable<Boolean>> tasks = campaigns.stream()
-                    .<Callable<Boolean>>map(id -> () -> repository.allow(guest, id, 3)).toList();
+                    .<Callable<Boolean>>map(id -> () -> allow(guest, id, 3)).toList();
             int allowed = 0;
             for (var future : executor.invokeAll(tasks)) {
                 if (future.get()) {
@@ -79,7 +82,7 @@ class GuestApplyRepositoryTests {
         try (var executor = Executors.newFixedThreadPool(8)) {
             List<Callable<Boolean>> tasks = new ArrayList<>();
             for (int i = 0; i < 12; i++) {
-                tasks.add(() -> repository.allow(guest, campaigns.get(0), 3));
+                tasks.add(() -> allow(guest, campaigns.get(0), 3));
             }
             for (var future : executor.invokeAll(tasks)) {
                 assertThat(future.get()).isTrue();
@@ -91,15 +94,45 @@ class GuestApplyRepositoryTests {
     @Test
     void eachGuestGetsTheirOwnAllowance() {
         for (int i = 0; i < 3; i++) {
-            assertThat(repository.allow(guest, campaigns.get(i), 3)).isTrue();
+            assertThat(allow(guest, campaigns.get(i), 3)).isTrue();
         }
-        assertThat(repository.allow("b".repeat(64), campaigns.get(3), 3)).isTrue();
+        assertThat(allow("b".repeat(64), campaigns.get(3), 3)).isTrue();
     }
 
     @Test
     void failedGrantsRollBackTheSessionAndUsage() {
-        assertThatThrownBy(() -> repository.allow(guest, UUID.randomUUID(), 3))
+        assertThatThrownBy(() -> allow(guest, UUID.randomUUID(), 3))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM public.guest_apply_sessions", Integer.class)).isZero();
+    }
+    /** Existing distinct-campaign assertions remain to verify the selectable compatibility mode. */
+    private boolean allow(String hash, UUID id, int limit) {
+        return repository.allow(hash, id, limit, GuestApplyCountingMode.DISTINCT_CAMPAIGNS);
+    }
+
+    @Test
+    void clickModeCountsRepeatedCampaignsAndHonorsFiveAsAConfiguredLimit() {
+        for (int i = 0; i < 5; i++) {
+            assertThat(repository.allow(guest, campaigns.get(0), 5, GuestApplyCountingMode.CLICKS)).isTrue();
+        }
+        assertThat(repository.allow(guest, campaigns.get(0), 5, GuestApplyCountingMode.CLICKS)).isFalse();
+        assertThat(jdbc.queryForObject("SELECT apply_count FROM public.guest_apply_sessions", Integer.class)).isEqualTo(5);
+    }
+
+    @Test
+    void simultaneousClickRequestsCannotExceedThreeEvenOnTheSameCampaign() throws Exception {
+        try (var executor = Executors.newFixedThreadPool(8)) {
+            List<Callable<Boolean>> tasks = new ArrayList<>();
+            for (int i = 0; i < 12; i++) {
+                tasks.add(() -> repository.allow(guest, campaigns.get(0), 3, GuestApplyCountingMode.CLICKS));
+            }
+            int granted = 0;
+            for (var result : executor.invokeAll(tasks)) {
+                if (result.get()) {
+                    granted++;
+                }
+            }
+            assertThat(granted).isEqualTo(3);
+        }
     }
 }
