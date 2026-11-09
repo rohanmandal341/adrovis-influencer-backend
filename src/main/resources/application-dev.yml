@@ -41,3 +41,6 @@ razorpay:
 app:
   payment:
     currency: INR
+
+adrovis:
+  frontend-origin: "http://localhost:5173,http://localhost:3000,https://brandcollabz.in"
