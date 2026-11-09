@@ -35,3 +35,7 @@ razorpay:
 app:
   payment:
     currency: INR
+
+adrovis:
+  auth:
+    public-key-location: ${ADROVIS_AUTH_PUBLIC_KEY_LOCATION:file:/etc/secrets/adrovis-public.pem}

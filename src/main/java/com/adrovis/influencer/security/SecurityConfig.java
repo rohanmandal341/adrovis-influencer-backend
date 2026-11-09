@@ -3,6 +3,8 @@ package com.adrovis.influencer.security;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,7 +26,9 @@ import org.springframework.web.cors.CorsConfigurationSource;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
-    /** Defines explicit public, account and Admin boundaries; unlisted operations stay denied. */
+
+    // ADDED: logger used by unauthorized()
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("coreCorsSource") CorsConfigurationSource coreCorsSource)
@@ -82,15 +86,16 @@ public class SecurityConfig {
     }
     /** Separates invalid credentials from an unavailable trusted account check. */
 
+
     private static void unauthorized(HttpServletResponse response, Exception exception) throws IOException {
+        log.warn("Auth rejected: {} - {}", exception.getClass().getSimpleName(), exception.getMessage());
         if (exception instanceof AuthenticationServiceException) {
             error(response, 503, "AUTHENTICATION_UNAVAILABLE");
         } else {
             response.setHeader("WWW-Authenticate", "Bearer");
             error(response, 401, "UNAUTHORIZED");
         }
-    }
-    /** Writes a minimal security error without token, exception or infrastructure details. */
+    }    /** Writes a minimal security error without token, exception or infrastructure details. */
 
     private static void error(HttpServletResponse response, int status, String code) throws IOException {
         response.setStatus(status);

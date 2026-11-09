@@ -12,44 +12,36 @@ import org.springframework.security.oauth2.jwt.Jwt;
 
 final class AccessTokenValidator implements OAuth2TokenValidator<Jwt> {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AccessTokenValidator.class);
     static final Set<String> ROLES = Set.of("CREATOR", "BRAND", "AGENCY", "ADMIN");
     private final String audience;
 
-    AccessTokenValidator(String audience) {
-        this.audience = audience;
-    }
-    /** Rejects onboarding tokens, malformed identity and claims outside the accepted platform contract. */
+    AccessTokenValidator(String audience) { this.audience = audience; }
 
     @Override
     public OAuth2TokenValidatorResult validate(Jwt jwt) {
-        try {
-            // UUID.fromString accepts abbreviated groups; require the full identity representation.
-            if (!UUID.fromString(jwt.getSubject()).toString().equalsIgnoreCase(jwt.getSubject())
-                    || !UUID.fromString(jwt.getId()).toString().equalsIgnoreCase(jwt.getId())) {
-                return invalid();
-            }
-            Object version = jwt.getClaim("ver");
-            List<String> roles = jwt.getClaimAsStringList("roles");
-            boolean valid = jwt.getAudience().contains(audience)
-                    && "access".equals(jwt.getClaimAsString("token_use"))
-                    && "JWT".equals(jwt.getHeaders().get("typ"))
-                    && jwt.getIssuedAt() != null && jwt.getExpiresAt() != null
-                    && jwt.getExpiresAt().isAfter(jwt.getIssuedAt())
-                    && !jwt.getIssuedAt().isAfter(Instant.now().plusSeconds(30))
-                    && Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt()).compareTo(Duration.ofMinutes(30)) <= 0
-                    // Accept only JSON integer versions within the supported signed-long range.
-                    // Number.longValue() alone silently truncates fractions and wraps oversized integers.
-                    && (version instanceof Integer || version instanceof Long)
-                    && ((Number) version).longValue() >= 0
-                    && roles != null && !roles.isEmpty() && ROLES.containsAll(roles);
-            return valid ? OAuth2TokenValidatorResult.success() : invalid();
-        } catch (RuntimeException exception) {
-            return invalid();
-        }
-    }
-    /** Returns a generic token error without echoing attacker-controlled claims. */
-
-    private OAuth2TokenValidatorResult invalid() {
+        String reason = check(jwt);
+        if (reason == null) return OAuth2TokenValidatorResult.success();
+        log.warn("Access token rejected: {}", reason);
         return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Invalid access token", null));
+    }
+
+    private String check(Jwt jwt) {
+        try {
+            String sub = jwt.getSubject();
+            if (sub == null || !UUID.fromString(sub).toString().equalsIgnoreCase(sub)) return "sub is not a full UUID: " + sub;
+            if (jwt.getAudience() == null || !jwt.getAudience().contains(audience)) return "aud mismatch: " + jwt.getAudience();
+            String use = jwt.getClaimAsString("token_use");
+            if (use != null && !"access".equals(use)) return "token_use=" + use;   // blocks onboarding tokens if you issue the claim
+            if (jwt.getIssuedAt() == null || jwt.getExpiresAt() == null) return "missing iat/exp";
+            if (Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt()).compareTo(Duration.ofMinutes(30)) > 0)
+                return "lifetime over 30 min";
+            List<String> roles = jwt.getClaimAsStringList("roles");
+            if (roles == null || roles.isEmpty()) return "roles claim missing";
+            if (!ROLES.containsAll(roles)) return "unknown roles: " + roles;
+            return null;
+        } catch (RuntimeException e) {
+            return "malformed claims: " + e.getMessage();
+        }
     }
 }

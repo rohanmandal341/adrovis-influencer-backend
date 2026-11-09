@@ -2,6 +2,8 @@ package com.adrovis.influencer.campaign.access;
 
 import com.adrovis.influencer.controller.CampaignController;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -12,8 +14,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = CampaignController.class)
 public class GuestApplyExceptionHandler {
-    /** Returns the stable frontend signup trigger without disclosing the external application URL. */
 
+    private static final Logger log = LoggerFactory.getLogger(GuestApplyExceptionHandler.class);
+
+    /** Returns the stable frontend signup trigger without disclosing the external application URL. */
     @ExceptionHandler(SignupRequiredException.class)
     public ResponseEntity<Map<String, Object>> signupRequired(SignupRequiredException exception) {
         return ResponseEntity.status(403).header("Cache-Control", "no-store").body(Map.of(
@@ -21,9 +25,13 @@ public class GuestApplyExceptionHandler {
                 "errorCode", "SIGNUP_REQUIRED",
                 "message", exception.getMessage()));
     }
+
     /** Returns a retryable failure without bypassing account or data checks. */
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<Map<String, Object>> unavailable(DataAccessException exception) {
+        // ADDED: logs the real Postgres reason server-side only; the response body stays generic
+        log.error("Guest apply DB failure: {}", exception.getMostSpecificCause().getMessage(), exception);
+
         return ResponseEntity.status(503).header("Cache-Control", "no-store").body(Map.of(
                 "success", false, "errorCode", "APPLICATION_ACCESS_UNAVAILABLE",
                 "message", "Application access is temporarily unavailable. Please try again."));

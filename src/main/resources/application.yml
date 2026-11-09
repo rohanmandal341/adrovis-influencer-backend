@@ -26,8 +26,12 @@ spring:
       ddl-auto: none
     show-sql: false
 
+# Collector Database (Creator Collector Supabase Project)
 collector:
   datasource:
+    url: jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
+    username: postgres.dxclgwqkxmmxgeyovagd
+    password: ${COLLECTOR_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: BrandCollabzCollectorPool
@@ -71,20 +75,20 @@ logging:
 
 
 razorpay:
-  key-id: ${RAZORPAY_KEY_ID}
-  key-secret: ${RAZORPAY_KEY_SECRET}
-  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+  key-id: ${RAZORPAY_KEY_ID:rzp_live_TPDJ7j4wIp0eFJ}
+  key-secret: ${RAZORPAY_KEY_SECRET:rVcBoOnGloPpisD0mqg2ezLC}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:Jr.gykGbU48_EUZ}
 
 
 # Separate authentication service: no private signing key or auth database access is needed here.
 adrovis:
   auth:
-    issuer: ${ADROVIS_AUTH_ISSUER}
+    issuer: ${ADROVIS_AUTH_ISSUER:https://brandcollabz-security.onrender.com}
     audience: ${ADROVIS_AUTH_AUDIENCE:adrovis-platform}
-    public-key-location: ${ADROVIS_AUTH_PUBLIC_KEY_LOCATION}
-    status-url: ${ADROVIS_AUTH_STATUS_URL}
+    public-key-location: ${ADROVIS_AUTH_PUBLIC_KEY_LOCATION:file:.secrets/adrovis-public.pem}
+    status-url: ${ADROVIS_AUTH_STATUS_URL:https://auth.brandcollabz.in/api/v1/auth/me}
     status-timeout: ${ADROVIS_AUTH_STATUS_TIMEOUT:10s}
-  frontend-origin: ${ADROVIS_FRONTEND_ORIGIN}
+  frontend-origin: ${ADROVIS_FRONTEND_ORIGIN:http://localhost:5173}
 
 # Guest allowance is enforced by the core database, not by frontend storage.
 # Local HTTP testing needs GUEST_APPLY_COOKIE_SECURE=false; keep true in production.

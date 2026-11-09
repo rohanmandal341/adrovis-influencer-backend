@@ -31,3 +31,13 @@ logging:
   level:
     com.adrovis.influencer: DEBUG
     org.hibernate.SQL: DEBUG
+    org.springframework.security: DEBUG   # ADDED
+
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID}
+  key-secret: ${RAZORPAY_KEY_SECRET}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+
+app:
+  payment:
+    currency: INR
