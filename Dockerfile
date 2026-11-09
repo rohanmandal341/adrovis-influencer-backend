@@ -1,21 +1,21 @@
 # ==========================================
-# 1. Build Stage (Pre-packaged Maven on Java 21)
+# 1. Build Stage (Maven on Java 17)
 # ==========================================
-FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
+FROM maven:3.9.9-eclipse-temurin-17-alpine AS builder
 WORKDIR /app
 
 # Cache Maven dependencies
 COPY pom.xml ./
 RUN mvn dependency:go-offline -B || true
 
-# Copy application source and build the JAR
+# Copy application source and build the JAR (test sources are not compiled)
 COPY src ./src
-RUN mvn clean package -DskipTests
+RUN mvn clean package -Dmaven.test.skip=true
 
 # ==========================================
-# 2. Lightweight Production Runtime Stage
+# 2. Lightweight Production Runtime Stage (Java 17)
 # ==========================================
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
 # Add non-root user for container security
