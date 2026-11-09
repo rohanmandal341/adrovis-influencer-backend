@@ -35,3 +35,8 @@ razorpay:
 app:
   payment:
     currency: INR
+
+adrovis:
+  frontend-origin: "https://brandcollabz.in"
+  auth:
+    public-key-location: ${ADROVIS_AUTH_PUBLIC_KEY_LOCATION:file:/etc/secrets/adrovis-public.pem}

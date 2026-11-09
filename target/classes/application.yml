@@ -31,7 +31,7 @@ collector:
   datasource:
     url: jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
     username: postgres.dxclgwqkxmmxgeyovagd
-    password: TAF?P.n,$3H3m
+    password: ${COLLECTOR_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: BrandCollabzCollectorPool
@@ -89,6 +89,8 @@ adrovis:
     status-url: ${ADROVIS_AUTH_STATUS_URL:https://auth.brandcollabz.in/api/v1/auth/me}
     status-timeout: ${ADROVIS_AUTH_STATUS_TIMEOUT:10s}
   frontend-origin: ${ADROVIS_FRONTEND_ORIGIN:http://localhost:5173}
+  # Optional exact HTTP loopback origins, including when the prod profile is active.
+  local-development-origins: ${ADROVIS_LOCAL_DEVELOPMENT_ORIGINS:}
 
 # Guest allowance is enforced by the core database, not by frontend storage.
 # Local HTTP testing needs GUEST_APPLY_COOKIE_SECURE=false; keep true in production.

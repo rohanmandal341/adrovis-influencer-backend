@@ -273,3 +273,29 @@ This pass does not establish live gateway settlement or remove the existing fron
 create-order idempotency, public ingestion abuse-control and cookie-reset trial limitations.
 Local reproduction logs: `.test-runtime/adversarial-before.log`,
 `.test-runtime/adversarial-webhook-repro.log` and `.test-runtime/adversarial-final.log`.
+
+
+### Local frontend access to a deployed core backend
+
+Keep `SPRING_PROFILES_ACTIVE=prod` and configure:
+
+```env
+ADROVIS_FRONTEND_ORIGIN=https://brandcollabz.in,https://www.brandcollabz.in
+ADROVIS_LOCAL_DEVELOPMENT_ORIGINS=http://localhost:5173
+CORS_ALLOWED_ORIGINS=https://brandcollabz.in,https://www.brandcollabz.in,http://localhost:5173
+```
+
+The security filter uses the first two settings as an exact credentialed allowlist.
+The optional development list accepts only HTTP localhost/127.0.0.1 origins, never wildcards
+or public HTTP domains. Leave it empty to disable local frontend access. Deploy this code
+before enabling the setting. CORS controls browser access; existing JWT/role checks remain.
+All frontend core requests, including analytics, must use the intended deployed API URL.
+Use POST `/api/v1/campaigns/{id}/apply-access` to get JSON, then navigate to applicationUrl;
+fetching the redirecting GET Apply endpoint cannot fix Google Forms' CORS policy.
+Cross-site guest cookies can still be blocked by browsers when using localhost with Render.
+
+Validation on 9 November 2026: 52 focused tests passed, with zero failures/errors/skips,
+including production-profile CORS preflights, route authorization and PostgreSQL concurrency checks.
+Compiled with the configured Java 17 release target on a Java 21 runtime. Existing executor tests
+were changed to finally/shutdownNow cleanup so they compile against Java 17. No shared database
+or deployed configuration was changed by this verification.

@@ -7,7 +7,7 @@ spring:
     username: postgres.dhfstnonquoyfgnpswsw
 
     # 3. Your actual Supabase database password
-    password: M@ndal790123789
+    password: ${SUPABASE_DB_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: update
@@ -24,7 +24,7 @@ collector:
     # Replace with your Collector Supabase project pooler URL (dxclgwqkxmmxgeyovagd)
     url: jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
     username: postgres.dxclgwqkxmmxgeyovagd
-    password: TAF?P.n,$3HPy3m
+    password: ${COLLECTOR_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
 logging:
@@ -41,3 +41,6 @@ razorpay:
 app:
   payment:
     currency: INR
+
+adrovis:
+  frontend-origin: "http://localhost:5173,http://localhost:3000,https://brandcollabz.in"

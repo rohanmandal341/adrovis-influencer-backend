@@ -1,7 +1,7 @@
 package com.adrovis.influencer.config;
 
 import java.net.URI;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -19,17 +19,32 @@ public class CorsConfig {
     @Bean
     public CorsConfigurationSource coreCorsSource(
             @Value("${adrovis.frontend-origin}") String configured, Environment environment) {
-        List<String> origins = Arrays.stream(configured.split(",")).map(String::trim).toList();
-        for (String value : origins) {
-            URI origin = URI.create(value);
-            boolean secure = "https".equals(origin.getScheme());
-            boolean local = "http".equals(origin.getScheme())
-                    && List.of("localhost", "127.0.0.1").contains(origin.getHost());
-            if (origin.getHost() == null || (!secure && !local) || value.contains("*")
-                    || origin.getRawUserInfo() != null || origin.getRawQuery() != null
-                    || origin.getRawFragment() != null || !origin.getRawPath().isEmpty()
-                    || (environment.acceptsProfiles(Profiles.of("prod")) && !secure)) {
-                throw new IllegalStateException("Configure exact frontend origins; production requires HTTPS");
+        List<String> origins = new ArrayList<>();
+        for (String value : configured.split(",", -1)) {
+            String origin = value.trim();
+            URI uri = exactOrigin(origin);
+            boolean local = isLocalHttp(uri);
+            if ((!"https".equals(uri.getScheme()) && !local)
+                    || (environment.acceptsProfiles(Profiles.of("prod")) && local)) {
+                throw new IllegalStateException("Configure exact HTTPS production frontend origins");
+            }
+            if (!origins.contains(origin)) {
+                origins.add(origin);
+            }
+        }
+        // Explicit opt-in permits local frontend testing against a deployed production backend.
+        // This separate list cannot grant arbitrary HTTP hosts or wildcard access.
+        String development = environment.getProperty("adrovis.local-development-origins", "");
+        for (String value : development.split(",")) {
+            String origin = value.trim();
+            if (origin.isEmpty()) {
+                continue;
+            }
+            if (!isLocalHttp(exactOrigin(origin))) {
+                throw new IllegalStateException("Local development origins must use HTTP localhost or 127.0.0.1");
+            }
+            if (!origins.contains(origin)) {
+                origins.add(origin);
             }
         }
         CorsConfiguration cors = new CorsConfiguration();
@@ -43,4 +58,26 @@ public class CorsConfig {
         source.registerCorsConfiguration("/**", cors);
         return source;
     }
+    /** Rejects paths, wildcards and ambiguous values before registering credentialed browser access. */
+    private URI exactOrigin(String value) {
+        try {
+            URI uri = URI.create(value);
+            if (uri.getHost() == null || value.contains("*") || uri.getRawUserInfo() != null
+                    || uri.getRawQuery() != null || uri.getRawFragment() != null
+                    || uri.getRawPath() == null || !uri.getRawPath().isEmpty()
+                    || uri.getPort() == 0 || uri.getPort() > 65535) {
+                throw new IllegalArgumentException("Not an exact origin");
+            }
+            return uri;
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException("Configure exact frontend origins without paths or wildcards");
+        }
+    }
+
+    /** Matches explicit loopback names only; similarly named public domains are never development origins. */
+    private boolean isLocalHttp(URI uri) {
+        return "http".equals(uri.getScheme())
+                && ("localhost".equals(uri.getHost()) || "127.0.0.1".equals(uri.getHost()));
+    }
+
 }

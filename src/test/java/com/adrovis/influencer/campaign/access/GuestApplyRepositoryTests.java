@@ -63,7 +63,8 @@ class GuestApplyRepositoryTests {
 
     @Test
     void simultaneousDifferentCampaignsCannotExceedTheAllowance() throws Exception {
-        try (var executor = Executors.newFixedThreadPool(8)) {
+        var executor = Executors.newFixedThreadPool(8);
+        try {
             List<Callable<Boolean>> tasks = campaigns.stream()
                     .<Callable<Boolean>>map(id -> () -> allow(guest, id, 3)).toList();
             int allowed = 0;
@@ -73,13 +74,17 @@ class GuestApplyRepositoryTests {
                 }
             }
             assertThat(allowed).isEqualTo(3);
+        } finally {
+            // Java 17 executors are not AutoCloseable; always release worker threads.
+            executor.shutdownNow();
         }
         assertThat(jdbc.queryForObject("SELECT count(*) FROM public.guest_campaign_access", Integer.class)).isEqualTo(3);
     }
 
     @Test
     void simultaneousRetriesConsumeOnlyOneSlot() throws Exception {
-        try (var executor = Executors.newFixedThreadPool(8)) {
+        var executor = Executors.newFixedThreadPool(8);
+        try {
             List<Callable<Boolean>> tasks = new ArrayList<>();
             for (int i = 0; i < 12; i++) {
                 tasks.add(() -> allow(guest, campaigns.get(0), 3));
@@ -87,6 +92,9 @@ class GuestApplyRepositoryTests {
             for (var future : executor.invokeAll(tasks)) {
                 assertThat(future.get()).isTrue();
             }
+        } finally {
+            // Java 17 executors are not AutoCloseable; always release worker threads.
+            executor.shutdownNow();
         }
         assertThat(jdbc.queryForObject("SELECT count(*) FROM public.guest_campaign_access", Integer.class)).isEqualTo(1);
     }
@@ -121,7 +129,8 @@ class GuestApplyRepositoryTests {
 
     @Test
     void simultaneousClickRequestsCannotExceedThreeEvenOnTheSameCampaign() throws Exception {
-        try (var executor = Executors.newFixedThreadPool(8)) {
+        var executor = Executors.newFixedThreadPool(8);
+        try {
             List<Callable<Boolean>> tasks = new ArrayList<>();
             for (int i = 0; i < 12; i++) {
                 tasks.add(() -> repository.allow(guest, campaigns.get(0), 3, GuestApplyCountingMode.CLICKS));
@@ -133,6 +142,9 @@ class GuestApplyRepositoryTests {
                 }
             }
             assertThat(granted).isEqualTo(3);
+        } finally {
+            // Java 17 executors are not AutoCloseable; always release worker threads.
+            executor.shutdownNow();
         }
     }
 }
