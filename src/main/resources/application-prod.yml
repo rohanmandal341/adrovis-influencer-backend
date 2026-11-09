@@ -37,6 +37,6 @@ app:
     currency: INR
 
 adrovis:
-  frontend-origin: "http://localhost:5173,http://localhost:3000,https://brandcollabz.in"
+  frontend-origin: "https://brandcollabz.in"
   auth:
     public-key-location: ${ADROVIS_AUTH_PUBLIC_KEY_LOCATION:file:/etc/secrets/adrovis-public.pem}
