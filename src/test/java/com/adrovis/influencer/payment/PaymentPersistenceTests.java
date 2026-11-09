@@ -98,7 +98,8 @@ class PaymentPersistenceTests {
 
     @Test
     void concurrentIdenticalSignedBodiesAreClaimedExactlyOnce() throws Exception {
-        try (var executor = Executors.newFixedThreadPool(8)) {
+        var executor = Executors.newFixedThreadPool(8);
+        try {
             List<Callable<Integer>> tasks = new ArrayList<>();
             for (int i = 0; i < 12; i++) {
                 tasks.add(() -> transactions.execute(status -> events.claim(UUID.randomUUID(), "same-body-hash",
@@ -109,6 +110,9 @@ class PaymentPersistenceTests {
                 claimed += result.get();
             }
             assertThat(claimed).isEqualTo(1);
+        } finally {
+            // Java 17 executors are not AutoCloseable; always release worker threads.
+            executor.shutdownNow();
         }
         assertThat(transactions.<Long>execute(status -> events.count())).isEqualTo(1);
     }
