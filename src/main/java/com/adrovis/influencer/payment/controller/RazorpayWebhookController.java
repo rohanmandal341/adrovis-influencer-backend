@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 public class RazorpayWebhookController {
 
     private final PaymentWebhookService webhookService;
+    /** Accepts provider-signed callbacks; user Bearer authentication is intentionally not the provider protocol. */
 
     @PostMapping
     public ResponseEntity<ApiResponse<String>> handleWebhook(

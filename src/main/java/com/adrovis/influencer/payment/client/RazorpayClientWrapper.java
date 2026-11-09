@@ -19,6 +19,7 @@ public class RazorpayClientWrapper {
 
     private final RazorpayProperties razorpayProperties;
     private RazorpayClient client;
+    /** Initializes the payment SDK and fails startup instead of continuing with a missing client. */
 
     @PostConstruct
     public void init() {
@@ -29,13 +30,16 @@ public class RazorpayClientWrapper {
             );
             log.info("Initialized RazorpayClient successfully.");
         } catch (RazorpayException e) {
-            log.error("Failed to initialize RazorpayClient", e);
+            // Do not continue with a null SDK client or expose credentials in a provider exception.
+            throw new IllegalStateException("Unable to initialize the configured payment provider");
         }
     }
+    /** Creates an authenticated account-owned order after DTO and role checks; pricing contract is unchanged. */
 
     public Order createOrder(BigDecimal amountInInr, String receiptId) throws RazorpayException {
         JSONObject orderRequest = new JSONObject();
-        long amountInPaise = amountInInr.multiply(BigDecimal.valueOf(100)).longValue();
+        // Exact conversion prevents silently rounding a user-supplied amount to a different charge.
+        long amountInPaise = amountInInr.multiply(BigDecimal.valueOf(100)).longValueExact();
         orderRequest.put("amount", amountInPaise);
         orderRequest.put("currency", "INR");
         orderRequest.put("receipt", receiptId);

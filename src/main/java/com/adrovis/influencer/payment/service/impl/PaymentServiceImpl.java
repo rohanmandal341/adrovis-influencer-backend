@@ -10,6 +10,10 @@ import com.adrovis.influencer.payment.entity.PaymentTransaction;
 import com.adrovis.influencer.payment.enums.PaymentStatus;
 import com.adrovis.influencer.payment.repository.PaymentTransactionRepository;
 import com.adrovis.influencer.payment.service.PaymentService;
+import com.adrovis.influencer.payment.security.PaymentOperationException;
+import com.adrovis.influencer.security.CurrentAccount;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.razorpay.Order;
 import com.razorpay.Utils;
 import lombok.RequiredArgsConstructor;
@@ -30,73 +34,89 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentTransactionRepository transactionRepository;
     private final RazorpayClientWrapper razorpayClient;
     private final RazorpayProperties razorpayProperties;
+    private final CurrentAccount accounts;
 
+    /** Preserves frontend pricing while binding every new order to a verified account and permitted role. */
     @Override
-    @Transactional
+    @PreAuthorize("isAuthenticated()")
+    @Transactional("primaryTransactionManager")
     public PaymentResponse createOrder(CreateOrderRequest request) {
-        try {
-            String referenceId = "TXN-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-            
-            Order razorpayOrder = razorpayClient.createOrder(request.getAmount(), referenceId);
-            String razorpayOrderId = razorpayOrder.get("id");
-
-            PaymentTransaction tx = PaymentTransaction.builder()
-                    .referenceId(referenceId)
-                    .email(request.getEmail().trim().toLowerCase())
-                    .fullName(request.getFullName())
-                    .planId(request.getPlanId())
-                    .userRole(request.getUserRole().toUpperCase())
-                    .amount(request.getAmount())
-                    .currency("INR")
-                    .status(PaymentStatus.INITIATED)
-                    .razorpayOrderId(razorpayOrderId)
-                    .build();
-
-            transactionRepository.save(tx);
-            log.info("Created payment order {} for email {}", razorpayOrderId, request.getEmail());
-
-            return PaymentResponse.from(tx, razorpayProperties.getKeyId());
-        } catch (Exception e) {
-            log.error("Failed to create Razorpay order", e);
-            throw new RuntimeException("Failed to initiate payment order: " + e.getMessage(), e);
+        var account = accounts.require();
+        if (!account.email().equals(request.getEmail().trim().toLowerCase(java.util.Locale.ROOT))) {
+            throw new AccessDeniedException("Payment email must match the verified account");
         }
+        String role = request.getUserRole().toUpperCase(java.util.Locale.ROOT);
+        if (!account.roles().contains(role)) {
+            throw new AccessDeniedException("The account does not have the requested role");
+        }
+        if (request.getAmount() == null || request.getAmount().signum() <= 0
+                || request.getAmount().stripTrailingZeros().scale() > 2) {
+            throw new PaymentOperationException(400, "INVALID_AMOUNT", "Use a positive amount with two decimal places.");
+        }
+        String referenceId = "TXN-" + UUID.randomUUID().toString().replace("-", "").toUpperCase(java.util.Locale.ROOT);
+        Order razorpayOrder;
+        try {
+            razorpayOrder = razorpayClient.createOrder(request.getAmount(), referenceId);
+        } catch (com.razorpay.RazorpayException exception) {
+            // Removed provider-message echo and email logging; those may contain credentials or personal data.
+            log.warn("Payment provider did not create an order.");
+            throw new PaymentOperationException(502, "PAYMENT_PROVIDER_UNAVAILABLE", "Unable to create the payment order.");
+        }
+        String orderId = razorpayOrder.get("id");
+        if (orderId == null || orderId.isBlank()) {
+            throw new PaymentOperationException(502, "PAYMENT_PROVIDER_UNAVAILABLE", "Unable to create the payment order.");
+        }
+        PaymentTransaction transaction = PaymentTransaction.builder()
+                .accountId(account.id()).referenceId(referenceId).email(account.email())
+                .fullName(request.getFullName()).planId(request.getPlanId()).userRole(role)
+                .amount(request.getAmount()).currency("INR").status(PaymentStatus.INITIATED)
+                .razorpayOrderId(orderId).build();
+        transactionRepository.save(transaction);
+        log.info("Created payment order: reference={}", referenceId);
+        return PaymentResponse.from(transaction, razorpayProperties.getKeyId());
     }
 
+    /** Checks ownership before signature processing; an invalid signature never changes payment state. */
     @Override
-    @Transactional
+    @PreAuthorize("isAuthenticated()")
+    @Transactional("primaryTransactionManager")
     public PaymentResponse verifyPayment(VerifyPaymentRequest request) {
-        PaymentTransaction tx = transactionRepository.findByRazorpayOrderId(request.getRazorpayOrderId())
-                .orElseThrow(() -> new IllegalArgumentException("Payment transaction not found for order ID: " + request.getRazorpayOrderId()));
-
+        var account = accounts.require();
+        PaymentTransaction transaction = transactionRepository
+                .findLockedByRazorpayOrderId(request.getRazorpayOrderId())
+                .filter(payment -> account.id().equals(payment.getAccountId()))
+                .orElseThrow(() -> new PaymentOperationException(404, "PAYMENT_NOT_FOUND", "Payment order not found."));
+        org.json.JSONObject options = new org.json.JSONObject();
+        // Use the stored order identifier, not a different client-provided order, in the signature check.
+        options.put("razorpay_order_id", transaction.getRazorpayOrderId());
+        options.put("razorpay_payment_id", request.getRazorpayPaymentId());
+        options.put("razorpay_signature", request.getRazorpaySignature());
+        boolean valid;
         try {
-            // Construct the JSONObject required by Razorpay SDK
-            org.json.JSONObject options = new org.json.JSONObject();
-            options.put("razorpay_order_id", request.getRazorpayOrderId());
-            options.put("razorpay_payment_id", request.getRazorpayPaymentId());
-            options.put("razorpay_signature", request.getRazorpaySignature());
-
-            // Verify signature using the SDK's expected signature
-            boolean isValid = com.razorpay.Utils.verifyPaymentSignature(options, razorpayProperties.getKeySecret());
-
-            if (!isValid) {
-                tx.markFailed();
-                transactionRepository.save(tx);
-                throw new SecurityException("Invalid payment signature verification failed.");
-            }
-
-            tx.markSuccess(request.getRazorpayPaymentId(), request.getRazorpaySignature());
-            transactionRepository.save(tx);
-            log.info("Payment verified successfully for order ID {}", request.getRazorpayOrderId());
-
-            return PaymentResponse.from(tx, razorpayProperties.getKeyId());
-        } catch (Exception e) {
-            log.error("Payment verification failed", e);
-            throw new RuntimeException("Payment verification failed: " + e.getMessage(), e);
+            valid = Utils.verifyPaymentSignature(options, razorpayProperties.getKeySecret());
+        } catch (com.razorpay.RazorpayException exception) {
+            valid = false;
         }
+        if (!valid) {
+            throw new PaymentOperationException(400, "INVALID_PAYMENT_SIGNATURE", "Payment signature is invalid.");
+        }
+        if (transaction.getStatus() == PaymentStatus.REFUNDED
+                || (transaction.getStatus() == PaymentStatus.SUCCESS
+                && !request.getRazorpayPaymentId().equals(transaction.getRazorpayPaymentId()))) {
+            throw new PaymentOperationException(409, "PAYMENT_STATE_CONFLICT", "Payment state does not permit this update.");
+        }
+        if (transaction.getStatus() != PaymentStatus.SUCCESS) {
+            // Preserve the existing checkout verification lifecycle; settlement reconciliation remains the webhook's job.
+            transaction.markSuccess(request.getRazorpayPaymentId(), request.getRazorpaySignature());
+            transactionRepository.save(transaction);
+        }
+        return PaymentResponse.from(transaction, razorpayProperties.getKeyId());
     }
 
+    /** Platform-wide payment reporting is restricted in the service as well as the HTTP filter. */
     @Override
-    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(value = "primaryTransactionManager", readOnly = true)
     public AdminPaymentStatsResponse getAdminStats() {
         long total = transactionRepository.count();
         long success = transactionRepository.countByStatus(PaymentStatus.SUCCESS);
@@ -113,8 +133,10 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
     }
 
+    /** Platform-wide payment reporting is restricted in the service as well as the HTTP filter. */
     @Override
-    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(value = "primaryTransactionManager", readOnly = true)
     public Page<PaymentTransaction> getAllTransactions(String search, Pageable pageable) {
         if (search == null || search.isBlank()) {
             return transactionRepository.findAll(pageable);

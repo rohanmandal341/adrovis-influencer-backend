@@ -6,6 +6,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -16,6 +18,11 @@ import java.util.UUID;
 @Repository
 public interface PaymentTransactionRepository extends JpaRepository<PaymentTransaction, UUID> {
     Optional<PaymentTransaction> findByRazorpayOrderId(String razorpayOrderId);
+    /** Serializes checkout and webhook updates so a late callback cannot overwrite another payment. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM PaymentTransaction p WHERE p.razorpayOrderId = :orderId")
+    Optional<PaymentTransaction> findLockedByRazorpayOrderId(@Param("orderId") String orderId);
+
     Optional<PaymentTransaction> findByReferenceId(String referenceId);
 
     long countByStatus(PaymentStatus status);

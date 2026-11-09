@@ -30,6 +30,10 @@ public class PaymentTransaction {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    /** Stable security-account owner; nullable only for historical records requiring reviewed linking. */
+    @Column(name = "account_id")
+    private UUID accountId;
+
     @Column(name = "reference_id", nullable = false, unique = true, length = 64)
     private String referenceId;
 
@@ -73,12 +77,14 @@ public class PaymentTransaction {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+    /** Records the original payment success state after callers have checked signature, owner and lifecycle. */
 
     public void markSuccess(String paymentId, String signature) {
         this.status = PaymentStatus.SUCCESS;
         this.razorpayPaymentId = paymentId;
         this.razorpaySignature = signature;
     }
+    /** Retains the existing domain helper; untrusted signature failures no longer invoke it. */
 
     public void markFailed() {
         this.status = PaymentStatus.FAILED;

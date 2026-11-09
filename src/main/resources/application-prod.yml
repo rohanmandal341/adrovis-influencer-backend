@@ -29,9 +29,13 @@ collector:
 
 razorpay:
   key-id: ${RAZORPAY_KEY_ID:rzp_test_your_key_id}
-  key-secret: ${RAZORPAY_KEY_SECRET:your_key_secret}
-  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:your_webhook_secret}
+  key-secret: ${RAZORPAY_KEY_SECRET}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
 
 app:
   payment:
     currency: INR
+
+adrovis:
+  auth:
+    public-key-location: ${ADROVIS_AUTH_PUBLIC_KEY_LOCATION:file:/etc/secrets/adrovis-public.pem}

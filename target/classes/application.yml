@@ -26,8 +26,12 @@ spring:
       ddl-auto: none
     show-sql: false
 
+# Collector Database (Creator Collector Supabase Project)
 collector:
   datasource:
+    url: jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
+    username: postgres.dxclgwqkxmmxgeyovagd
+    password: TAF?P.n,$3H3m
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: BrandCollabzCollectorPool
@@ -41,21 +45,27 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health
   endpoint:
     health:
-      show-details: when_authorized
+      show-details: never
 
 app:
   payment:
     currency: INR
+    max-webhook-bytes: ${PAYMENT_MAX_WEBHOOK_BYTES:262144}
+  guest-apply:
+    # Set 3 or 5 as required. CLICKS counts every allowed Apply request, including the same campaign.
+    limit: ${GUEST_APPLY_LIMIT:3}
+    counting-mode: ${GUEST_APPLY_COUNTING_MODE:CLICKS}
+    cookie-secure: ${GUEST_APPLY_COOKIE_SECURE:true}
+    cookie-same-site: ${GUEST_APPLY_COOKIE_SAME_SITE:Lax}
   backend-base-url: ${BACKEND_BASE_URL:https://adrovis-influencer-backend.onrender.com}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 analytics:
   visitor-salt: ${ANALYTICS_VISITOR_SALT:bc_secret_salt_2026_brand_collabz}
-  admin-key: ${ANALYTICS_ADMIN_KEY:brand_collabz_admin_secret_99}
   allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 logging:
@@ -69,3 +79,17 @@ razorpay:
   key-secret: ${RAZORPAY_KEY_SECRET:rVcBoOnGloPpisD0mqg2ezLC}
   webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:Jr.gykGbU48_EUZ}
 
+
+# Separate authentication service: no private signing key or auth database access is needed here.
+adrovis:
+  auth:
+    issuer: ${ADROVIS_AUTH_ISSUER:https://brandcollabz-security.onrender.com}
+    audience: ${ADROVIS_AUTH_AUDIENCE:adrovis-platform}
+    public-key-location: ${ADROVIS_AUTH_PUBLIC_KEY_LOCATION:file:.secrets/adrovis-public.pem}
+    status-url: ${ADROVIS_AUTH_STATUS_URL:https://auth.brandcollabz.in/api/v1/auth/me}
+    status-timeout: ${ADROVIS_AUTH_STATUS_TIMEOUT:10s}
+  frontend-origin: ${ADROVIS_FRONTEND_ORIGIN:http://localhost:5173}
+
+# Guest allowance is enforced by the core database, not by frontend storage.
+# Local HTTP testing needs GUEST_APPLY_COOKIE_SECURE=false; keep true in production.
+# With cross-site frontend/API hosting, None requires Secure and browser third-party cookie support.

@@ -1,0 +1,13 @@
+.secrets/
+.env
+.env.*
+!.env.example
+.idea/
+*.pem
+*.key
+*.crt
+*.cer
+target/
+.test-runtime/
+hs_err_pid*.log
+replay_pid*.log

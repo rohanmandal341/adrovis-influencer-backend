@@ -1,6 +1,10 @@
 package com.adrovis.influencer.controller;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.adrovis.influencer.dto.ApiResponse;
+import com.adrovis.influencer.security.CurrentAccount;
+import org.springframework.security.access.AccessDeniedException;
 import com.adrovis.influencer.entity.NewsletterSubscriptionEntity;
 import com.adrovis.influencer.repository.NewsletterSubscriptionRepository;
 import jakarta.validation.Valid;
@@ -19,10 +23,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/newsletter")
 @RequiredArgsConstructor
 @Validated
-@CrossOrigin(origins = "*")
 public class NewsletterController {
 
     private final NewsletterSubscriptionRepository subscriptionRepository;
+    private final CurrentAccount accounts;
 
     @Data
     public static class SubscribeRequest {
@@ -33,11 +37,16 @@ public class NewsletterController {
 
     /**
      * POST /api/v1/newsletter/subscribe
-     * Idempotent email subscription
+     * Idempotent subscription for the signed-in account's verified email; prevents subscribing another person.
      */
+    @PreAuthorize("isAuthenticated()")
+    @SecurityRequirement(name = "adrovisBearer")
     @PostMapping("/subscribe")
     public ResponseEntity<ApiResponse<String>> subscribe(@Valid @RequestBody SubscribeRequest request) {
-        String cleanEmail = request.getEmail().trim().toLowerCase();
+        String cleanEmail = request.getEmail().trim().toLowerCase(java.util.Locale.ROOT);
+        if (!accounts.require().email().equals(cleanEmail)) {
+            throw new AccessDeniedException("Subscribe using your verified account email");
+        }
 
         if (!subscriptionRepository.existsByEmailIgnoreCase(cleanEmail)) {
             NewsletterSubscriptionEntity sub = NewsletterSubscriptionEntity.builder()
@@ -54,6 +63,8 @@ public class NewsletterController {
      * GET /api/v1/newsletter/subscribers
      * Paginated list of subscribers with optional email search and active-status filtering
      */
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @GetMapping("/subscribers")
     public ResponseEntity<ApiResponse<Page<NewsletterSubscriptionEntity>>> getSubscribers(
             @RequestParam(required = false) Boolean activeOnly,

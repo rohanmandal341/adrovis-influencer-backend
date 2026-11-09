@@ -24,6 +24,7 @@ public class PaymentResponse {
     private String razorpayPaymentId;
     private String razorpayKeyId;
     private Instant createdAt;
+    /** Maps persistence state into the explicitly defined response fields. */
 
     public static PaymentResponse from(PaymentTransaction tx, String razorpayKeyId) {
         return PaymentResponse.builder()

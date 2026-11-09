@@ -1,5 +1,6 @@
 package com.adrovis.influencer.collector.service;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.adrovis.influencer.collector.dto.*;
 import com.adrovis.influencer.collector.entity.CollectorTeamMember;
 import com.adrovis.influencer.collector.repository.CollectorCreatorRepository;
@@ -15,6 +16,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
+@PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 public class CollectorDashboardService {
 

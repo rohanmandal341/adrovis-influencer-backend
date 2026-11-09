@@ -34,7 +34,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import org.springframework.security.access.prepost.PreAuthorize;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -51,7 +52,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/analytics")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "${analytics.allowed-origins:*}")
 @Slf4j
 public class AnalyticsController {
 
@@ -68,9 +68,6 @@ public class AnalyticsController {
     @Value("${analytics.visitor-salt:change-me-in-production}")
     private String visitorSalt;
 
-    /** Shared secret for admin endpoints (/overview, /sessions). Empty = admin endpoints locked. */
-    @Value("${analytics.admin-key:}")
-    private String adminKey;
 
     // =====================================================================
     // DTOs
@@ -148,6 +145,7 @@ public class AnalyticsController {
     // =====================================================================
     // PUBLIC INGESTION ENDPOINTS
     // =====================================================================
+    /** Retains anonymous visitor collection; this ingestion route must work before signup. */
 
     @PostMapping("/track")
     @Transactional
@@ -204,6 +202,7 @@ public class AnalyticsController {
 
         return ResponseEntity.ok(ApiResponse.ok("Tracked"));
     }
+    /** Updates guest visit duration without exposing analytics read data. */
 
     @PostMapping("/heartbeat")
     @Transactional
@@ -214,6 +213,7 @@ public class AnalyticsController {
                 Math.max(0, req.getActiveDwellSeconds()));
         return ResponseEntity.ok(ApiResponse.ok("Alive"));
     }
+    /** Preserves the existing anonymous application-conversion event collection. */
 
     @PostMapping("/conversion")
     @Transactional
@@ -242,14 +242,15 @@ public class AnalyticsController {
     // =====================================================================
     // ADMIN ENDPOINTS
     // =====================================================================
+    /** Returns existing aggregate dashboard data only through its Admin-protected read endpoint. */
 
     @GetMapping("/overview")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<Map<String, Object>>> getOverview(
-            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey,
             @RequestParam(defaultValue = "30") int days) {
 
-        requireAdmin(providedKey);
         int window = Math.min(Math.max(days, 1), 365);
 
         long liveUsers = analyticsRepository.countLiveActiveUsers();
@@ -330,11 +331,13 @@ public class AnalyticsController {
 
         return ResponseEntity.ok(ApiResponse.ok(out));
     }
+    /** Preserves session filtering and pagination while preventing non-Admin access to visitor records. */
 
     @GetMapping("/sessions")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<Page<AnalyticsSessionEntity>>> getSessions(
-            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey,
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String deviceType,
             @RequestParam(required = false) String channel,
@@ -347,7 +350,6 @@ public class AnalyticsController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String direction) {
 
-        requireAdmin(providedKey);
 
         final String device;
         if (deviceType == null || deviceType.isBlank()) {
@@ -412,52 +414,48 @@ public class AnalyticsController {
 
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
+    /** Returns one visitor session only after Admin authorization. */
 
     @GetMapping("/sessions/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<AnalyticsSessionEntity>> getSession(
-            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey,
             @PathVariable UUID id) {
-        requireAdmin(providedKey);
         return ResponseEntity.ok(ApiResponse.ok(analyticsRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"))));
     }
+    /** Returns consented visitor leads only to Admin accounts. */
 
     @GetMapping("/leads")
+    @PreAuthorize("hasRole('ADMIN')")
+    @SecurityRequirement(name = "adrovisBearer")
     @Transactional(readOnly = true)
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getLeads(
-            @RequestHeader(value = "X-Admin-Key", required = false) String providedKey) {
-        requireAdmin(providedKey);
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getLeads() {
         return ResponseEntity.ok(ApiResponse.ok(safe(analyticsRepository.getRecentLeads())));
     }
 
     // =====================================================================
     // HELPERS
     // =====================================================================
-
-    private void requireAdmin(String provided) {
-        boolean ok = adminKey != null && !adminKey.isBlank() && provided != null
-                && MessageDigest.isEqual(
-                adminKey.getBytes(StandardCharsets.UTF_8),
-                provided.getBytes(StandardCharsets.UTF_8));
-        if (!ok) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
-        }
-    }
+    /** Reads an existing numeric aggregate with the original fallback behavior. */
 
     private static double num(Map<String, Object> map, String key, double defaultValue) {
         if (map == null) return defaultValue;
         Object v = map.get(key);
         return v instanceof Number n ? n.doubleValue() : defaultValue;
     }
+    /** Keeps dashboard numeric formatting stable. */
 
     private static double round1(double v) {
         return Math.round(v * 10.0) / 10.0;
     }
+    /** Keeps existing empty-list response behavior when an aggregate query returns no rows. */
 
     private static <T> List<T> safe(List<T> list) {
         return list != null ? list : Collections.emptyList();
     }
+    /** Bounds analytics text to the existing storage lengths. */
 
     private static String clip(String s, int max) {
         if (s == null) return null;
@@ -476,10 +474,12 @@ public class AnalyticsController {
         if (p.isEmpty()) p = "/";
         return p.length() > 512 ? p.substring(0, 512) : p;
     }
+    /** Escapes user filter wildcard characters for the existing analytics search logic. */
 
     private static String escapeLike(String s) {
         return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
+    /** Extracts a referrer domain for analytics classification, not authorization. */
 
     private static String extractDomain(String url) {
         if (url == null) return null;
@@ -493,12 +493,14 @@ public class AnalyticsController {
             return null;
         }
     }
+    /** Reads optional analytics hints with the existing fallback behavior; headers do not grant privileges. */
 
     private String headerOrDefault(HttpServletRequest req, String primary, String secondary, String fallback) {
         String v = req.getHeader(primary);
         if (v == null || v.isBlank()) v = req.getHeader(secondary);
         return (v == null || v.isBlank()) ? fallback : v.trim();
     }
+    /** Keeps language classification independent of account authorization. */
 
     private String extractLanguage(HttpServletRequest req) {
         String h = req.getHeader("Accept-Language");
@@ -506,6 +508,7 @@ public class AnalyticsController {
         String first = h.split(",")[0].split(";")[0].trim();
         return clip(first, 16);
     }
+    /** Preserves visitor attribution; forwarded visitor hints are not used as an account credential. */
 
     private String extractClientIp(HttpServletRequest request) {
         String ip = request.getHeader("CF-Connecting-IP");
@@ -532,6 +535,7 @@ public class AnalyticsController {
     }
 
     // ---------- user-agent parsing ----------
+    /** Preserves the existing device classification logic. */
 
     private String detectDeviceType(String ua) {
         if (ua == null) return "Desktop";
@@ -541,6 +545,7 @@ public class AnalyticsController {
         if (l.contains("mobile") || l.contains("android") || l.contains("iphone")) return "Mobile";
         return "Desktop";
     }
+    /** Preserves the existing operating-system classification logic. */
 
     private String detectOs(String ua) {
         if (ua == null) return "Other";
@@ -552,6 +557,7 @@ public class AnalyticsController {
         if (l.contains("linux")) return "Linux";
         return "Other";
     }
+    /** Preserves the existing browser classification logic. */
 
     private String detectBrowser(String ua) {
         if (ua == null) return "Other";
@@ -585,6 +591,7 @@ public class AnalyticsController {
     }
 
     // ---------- marketing channel classification ----------
+    /** Preserves the existing traffic-channel attribution rules. */
 
     private String classifyChannel(String utmSource, String utmMedium, String referrerDomain, String inAppSource) {
         String src = utmSource == null ? "" : utmSource.toLowerCase(Locale.ROOT);

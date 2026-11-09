@@ -1,5 +1,6 @@
 package com.adrovis.influencer.collector.controller;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import com.adrovis.influencer.collector.dto.DashboardOverviewDto;
 import com.adrovis.influencer.collector.service.CollectorDashboardService;
 import lombok.RequiredArgsConstructor;
@@ -7,12 +8,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@SecurityRequirement(name = "adrovisBearer")
 @RequestMapping("/api/v1/collector/dashboard")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class CollectorDashboardController {
 
     private final CollectorDashboardService dashboardService;
+    /** Returns existing aggregate dashboard data only through its Admin-protected read endpoint. */
 
     @GetMapping("/overview")
     public ResponseEntity<DashboardOverviewDto> getOverview(

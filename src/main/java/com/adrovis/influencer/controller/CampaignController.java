@@ -4,6 +4,12 @@ import com.adrovis.influencer.dto.ApiResponse;
 import com.adrovis.influencer.dto.CampaignFilterRequest;
 import com.adrovis.influencer.dto.PublicCampaignResponse;
 import com.adrovis.influencer.service.CampaignService;
+import com.adrovis.influencer.campaign.access.CampaignApplyAccessService;
+import com.adrovis.influencer.campaign.access.GuestApplyCookie;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
@@ -20,6 +26,9 @@ import java.util.UUID;
 public class CampaignController {
 
     private final CampaignService campaignService;
+    private final CampaignApplyAccessService applyAccess;
+    private final GuestApplyCookie guestCookies;
+    /** Preserves public campaign discovery and the existing filter contract. */
 
     @GetMapping
     public ResponseEntity<ApiResponse<Page<PublicCampaignResponse>>> getPublicCampaigns(
@@ -27,6 +36,7 @@ public class CampaignController {
         Page<PublicCampaignResponse> campaigns = campaignService.getFilteredCampaigns(filter);
         return ResponseEntity.ok(ApiResponse.ok(campaigns));
     }
+    /** Preserves public campaign details without exposing the direct application destination. */
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<PublicCampaignResponse>> getCampaignDetails(@PathVariable UUID id) {
@@ -40,11 +50,39 @@ public class CampaignController {
      * to the actual Google Form without exposing destination links up-front.
      */
     @GetMapping("/{id}/apply")
-    public ResponseEntity<Void> applyToCampaign(@PathVariable UUID id) {
-        String destinationUrl = campaignService.trackAndGetApplicationUrl(id);
+    public ResponseEntity<Void> applyToCampaign(
+            @PathVariable UUID id,
+            @CookieValue(name = GuestApplyCookie.NAME, required = false) String guest,
+            @AuthenticationPrincipal Jwt account,
+            HttpServletResponse response) {
+        String destination = grant(id, guest, account, response);
+        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(destination))
+                .header(HttpHeaders.CACHE_CONTROL, "no-store").build();
+    }
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setLocation(URI.create(destinationUrl));
-        return new ResponseEntity<>(headers, HttpStatus.FOUND);
+    // JSON alternative lets the frontend display signup before navigating to an external form.
+    /** Returns a gated JSON destination so the frontend can show signup before navigating. */
+    @PostMapping("/{id}/apply-access")
+    public ResponseEntity<Map<String, Object>> applyAccess(
+            @PathVariable UUID id,
+            @CookieValue(name = GuestApplyCookie.NAME, required = false) String guest,
+            @AuthenticationPrincipal Jwt account,
+            HttpServletResponse response) {
+        String destination = grant(id, guest, account, response);
+        return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(Map.of("success", true, "applicationUrl", destination));
+    }
+    /** Validates the destination and atomically enforces the selected guest policy before recording a click. */
+
+    private String grant(UUID id, String raw, Jwt account, HttpServletResponse response) {
+        if (account != null) {
+            return applyAccess.grant(id, null, true);
+        }
+        String identity = guestCookies.identity(raw);
+        String destination = applyAccess.grant(id, guestCookies.hash(identity), false);
+        if (!identity.equals(raw)) {
+            guestCookies.write(response, identity);
+        }
+        return destination;
     }
 }
