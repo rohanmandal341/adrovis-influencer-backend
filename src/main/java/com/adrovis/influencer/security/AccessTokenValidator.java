@@ -34,8 +34,8 @@ final class AccessTokenValidator implements OAuth2TokenValidator<Jwt> {
             String use = jwt.getClaimAsString("token_use");
             if (use != null && !"access".equals(use)) return "token_use=" + use;   // blocks onboarding tokens if you issue the claim
             if (jwt.getIssuedAt() == null || jwt.getExpiresAt() == null) return "missing iat/exp";
-            if (Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt()).compareTo(Duration.ofMinutes(30)) > 0)
-                return "lifetime over 30 min";
+            if (Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt()).compareTo(Duration.ofDays(30)) > 0)
+             return "lifetime over 30 days";
             List<String> roles = jwt.getClaimAsStringList("roles");
             if (roles == null || roles.isEmpty()) return "roles claim missing";
             if (!ROLES.containsAll(roles)) return "unknown roles: " + roles;
