@@ -81,6 +81,98 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/collector/**", "/api/v1/inquiries/**", "/api/v1/inquiries",
                                 "/api/v1/newsletter/subscribers", "/api/v1/analytics/**",
                                 "/api/v1/admin/**", "/api/v1/agencies", "/api/v1/agencies/**").hasRole("ADMIN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/portal/publisher-profiles"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/portal/publisher-profiles/me"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/portal/campaigns"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/portal/campaigns",
+                                "/api/v1/portal/campaigns/{id}"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/portal/campaigns/{campaignId}/application-form/versions"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/portal/campaigns/{campaignId}/application-form"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/v1/portal/campaigns/{campaignId}/application-settings"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/v1/portal/campaigns/{campaignId}/draft",
+                                "/api/v1/portal/campaigns/{campaignId}/details"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/api/v1/portal/campaigns/{campaignId}"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/portal/campaigns/{campaignId}/publish",
+                                "/api/v1/portal/campaigns/{campaignId}/pause",
+                                "/api/v1/portal/campaigns/{campaignId}/resume",
+                                "/api/v1/portal/campaigns/{campaignId}/close"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/campaigns/managed",
+                                "/api/v1/campaigns/managed/{campaignId}"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/campaigns/managed/{campaignId}/application-form"
+                        ).hasRole("CREATOR")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/campaigns/managed/{campaignId}/applications"
+                        ).hasRole("CREATOR")
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/users/me/campaign-applications",
+                                "/api/v1/users/me/campaign-applications/{applicationId}"
+                        ).hasRole("CREATOR")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/portal/campaigns/{campaignId}/applications",
+                                "/api/v1/portal/campaigns/{campaignId}/applications/{applicationId}"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/v1/portal/campaigns/{campaignId}/applications/{applicationId}/status"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/users/me/campaign-applications/{applicationId}/updates"
+                        ).hasRole("CREATOR")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/portal/dashboard/overview",
+                                "/api/v1/portal/dashboard/campaigns",
+                                "/api/v1/portal/dashboard/campaigns/{campaignId}/applications",
+                                "/api/v1/portal/dashboard/campaigns/{campaignId}/applications/export"
+                        ).hasAnyRole("BRAND", "AGENCY", "ADMIN")
                         .anyRequest().denyAll())
                 .build();
     }

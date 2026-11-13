@@ -1,13 +1,39 @@
-.secrets/
+# Maven build output
+/target/
+*.class
+
+# Local environment and credentials
+/.secrets/
 .env
 .env.*
 !.env.example
-.idea/
 *.pem
 *.key
 *.crt
 *.cer
-target/
-.test-runtime/
-hs_err_pid*.log
-replay_pid*.log
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# IDE and editor metadata
+/.idea/
+/.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# Local test runtime, logs and crash dumps
+/.test-runtime/
+*.log
+hs_err_pid*
+replay_pid*
+*.hprof
+/backend_dump.txt
+/backend.txt
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini

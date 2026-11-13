@@ -28,11 +28,19 @@ import java.util.Objects;
         basePackages = {
                 "com.adrovis.influencer.repository",
                 "com.adrovis.email.repository",
-                "com.adrovis.influencer.payment.repository"
+                "com.adrovis.influencer.payment.repository",
+                "com.adrovis.influencer.campaignmanagement.publisher.repository",
+                "com.adrovis.influencer.campaignmanagement.campaign.repository",
+                "com.adrovis.influencer.campaignmanagement.form.repository",
+                "com.adrovis.influencer.campaignmanagement.application.repository",
+                "com.adrovis.influencer.campaignmanagement.dashboard.repository"
+
+
         },
         entityManagerFactoryRef = "primaryEntityManagerFactory",
         transactionManagerRef = "primaryTransactionManager"
 )
+
 public class PrimaryDbConfig {
 
     @Primary
@@ -63,7 +71,11 @@ public class PrimaryDbConfig {
                 .packages(
                         "com.adrovis.influencer.entity",
                         "com.adrovis.email.entity",
-                        "com.adrovis.influencer.payment.entity"
+                        "com.adrovis.influencer.payment.entity",
+                        "com.adrovis.influencer.campaignmanagement.publisher.entity",
+                        "com.adrovis.influencer.campaignmanagement.campaign.entity",
+                        "com.adrovis.influencer.campaignmanagement.form.entity",
+                        "com.adrovis.influencer.campaignmanagement.application.entity"
                 )
                 .persistenceUnit("primaryPU")
                 .properties(properties)
@@ -76,4 +88,7 @@ public class PrimaryDbConfig {
             @Qualifier("primaryEntityManagerFactory") LocalContainerEntityManagerFactoryBean factory) {
         return new JpaTransactionManager(Objects.requireNonNull(factory.getObject()));
     }
+
+
+
 }
