@@ -34,7 +34,7 @@ logging:
     org.springframework.security: DEBUG   # ADDED
 
 razorpay:
-  key-id: ${RAZORPAY_KEY_ID}
+  key-id: ${RAZORPAY_KEY_ID:rzp_test_your_key_id}
   key-secret: ${RAZORPAY_KEY_SECRET}
   webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
 

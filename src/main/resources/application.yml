@@ -51,6 +51,11 @@ management:
       show-details: never
 
 app:
+  # Keep existing app properties here.
+
+  campaign-dashboard:
+    export-max-rows: ${CAMPAIGN_APPLICANT_EXPORT_MAX_ROWS:500}
+    export-max-bytes: ${CAMPAIGN_APPLICANT_EXPORT_MAX_BYTES:2097152}
   payment:
     currency: INR
     max-webhook-bytes: ${PAYMENT_MAX_WEBHOOK_BYTES:262144}
@@ -89,8 +94,6 @@ adrovis:
     status-url: ${ADROVIS_AUTH_STATUS_URL:https://auth.brandcollabz.in/api/v1/auth/me}
     status-timeout: ${ADROVIS_AUTH_STATUS_TIMEOUT:10s}
   frontend-origin: ${ADROVIS_FRONTEND_ORIGIN:http://localhost:5173}
-  # Optional exact HTTP loopback origins, including when the prod profile is active.
-  local-development-origins: ${ADROVIS_LOCAL_DEVELOPMENT_ORIGINS:}
 
 # Guest allowance is enforced by the core database, not by frontend storage.
 # Local HTTP testing needs GUEST_APPLY_COOKIE_SECURE=false; keep true in production.
