@@ -30,6 +30,28 @@ public class AnalyticsSessionEntity {
     @Column(name = "visitor_hash", nullable = false, length = 64)
     private String visitorHash;
 
+    @Column(name = "person_id", length = 64)
+    private String personId;
+
+    @Column(name = "account_id")
+    private UUID accountId;
+
+    @Column(name = "user_email", length = 254)
+    private String userEmail;
+
+    @Column(name = "user_name", length = 120)
+    private String userName;
+
+    @Column(name = "user_type", length = 32)
+    @Builder.Default
+    private String userType = "GUEST";
+
+    @Column(name = "friendly_name", length = 64)
+    private String friendlyName;
+
+    @Column(name = "display_label", length = 160)
+    private String displayLabel;
+
     @Column(name = "entry_path", nullable = false, length = 512)
     private String entryPath;
 
@@ -73,6 +95,40 @@ public class AnalyticsSessionEntity {
     @Column(name = "city", length = 128)
     private String city;
 
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
+    @Column(name = "location_confidence", length = 24)
+    @Builder.Default
+    private String locationConfidence = "UNKNOWN";
+
+    @Column(name = "masked_ip", length = 48)
+    private String maskedIp;
+
+    @Column(name = "network_group_id", length = 32)
+    private String networkGroupId;
+
+    @Column(name = "isp", length = 128)
+    private String isp;
+
+    @Column(name = "asn", length = 64)
+    private String asn;
+
+    @Column(name = "is_vpn_or_proxy", nullable = false)
+    private boolean vpnOrProxy;
+
+    @Column(name = "is_datacenter", nullable = false)
+    private boolean datacenter;
+
+    @Column(name = "timezone_mismatch", nullable = false)
+    private boolean timezoneMismatch;
+
+    @Column(name = "device_fingerprint", length = 32)
+    private String deviceFingerprint;
+
     @Column(name = "device_type", nullable = false, length = 16)
     @Builder.Default
     private String deviceType = "Desktop";
@@ -111,6 +167,15 @@ public class AnalyticsSessionEntity {
     @Column(name = "active_dwell_seconds", nullable = false)
     private int activeDwellSeconds;
 
+    @Column(name = "max_scroll_depth", nullable = false)
+    private int maxScrollDepth;
+
+    @Column(name = "rage_clicks", nullable = false)
+    private int rageClicks;
+
+    @Column(name = "engaged", nullable = false)
+    private boolean engaged;
+
     @Column(name = "applied", nullable = false)
     private boolean applied;
 
@@ -128,5 +193,6 @@ public class AnalyticsSessionEntity {
         OffsetDateTime now = OffsetDateTime.now();
         if (createdAt == null) createdAt = now;
         if (lastActiveAt == null) lastActiveAt = now;
+        if (personId == null) personId = visitorHash;
     }
 }

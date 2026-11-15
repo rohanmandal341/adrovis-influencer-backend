@@ -12,276 +12,332 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Notes:
- *  - "Today" is always the calendar day in Asia/Kolkata, independent of the DB timezone.
- *  - No CAST(x AS type) with "::" is used, so Hibernate never confuses it with a named parameter.
- *  - campaignId is passed as String and cast in SQL so a null never binds as bytea.
- */
 @Repository
 public interface AnalyticsRepository
         extends JpaRepository<AnalyticsSessionEntity, UUID>, JpaSpecificationExecutor<AnalyticsSessionEntity> {
 
-    // ------------------------------------------------------------------
-    // WRITES
-    // ------------------------------------------------------------------
-
-    /** Idempotent: 50 refreshes in one day still produce exactly 1 row. Returns 1 if new today, 0 if already counted. */
-    @Modifying
-    @Query(value = """
-            INSERT INTO analytics_daily_visitors (visitor_hash, visit_date)
-            VALUES (:visitorHash, CAST(now() AT TIME ZONE 'Asia/Kolkata' AS date))
-            ON CONFLICT (visitor_hash, visit_date) DO NOTHING
-            """, nativeQuery = true)
-    int recordDailyUniqueVisitor(@Param("visitorHash") String visitorHash);
-
-    /** Atomic insert-or-increment. Safe under concurrent requests for the same session. */
-    @Modifying
-    @Query(value = """
-            INSERT INTO analytics_sessions (
-                session_id, visitor_hash, entry_path, last_path, referrer, referrer_domain,
-                utm_source, utm_medium, utm_campaign, utm_content, utm_term, campaign_id, channel,
-                country, region, city, device_type, browser, os, in_app_browser, in_app_source,
-                screen_resolution, timezone, language, returning_visitor)
-            VALUES (
-                :sessionId, :visitorHash, :path, :path, :referrer, :referrerDomain,
-                :utmSource, :utmMedium, :utmCampaign, :utmContent, :utmTerm,
-                CAST(:campaignId AS uuid), :channel,
-                :country, :region, :city, :deviceType, :browser, :os, :inApp, :inAppSource,
-                :screenResolution, :timezone, :language,
-                EXISTS (SELECT 1 FROM analytics_daily_visitors v
-                        WHERE v.visitor_hash = :visitorHash
-                          AND v.visit_date < CAST(now() AT TIME ZONE 'Asia/Kolkata' AS date)))
-            ON CONFLICT (session_id) DO UPDATE SET
-                page_views     = analytics_sessions.page_views + 1,
-                last_path      = EXCLUDED.last_path,
-                last_active_at = now()
-            """, nativeQuery = true)
-    int upsertSession(@Param("sessionId") UUID sessionId,
-                      @Param("visitorHash") String visitorHash,
-                      @Param("path") String path,
-                      @Param("referrer") String referrer,
-                      @Param("referrerDomain") String referrerDomain,
-                      @Param("utmSource") String utmSource,
-                      @Param("utmMedium") String utmMedium,
-                      @Param("utmCampaign") String utmCampaign,
-                      @Param("utmContent") String utmContent,
-                      @Param("utmTerm") String utmTerm,
-                      @Param("campaignId") String campaignId,
-                      @Param("channel") String channel,
-                      @Param("country") String country,
-                      @Param("region") String region,
-                      @Param("city") String city,
-                      @Param("deviceType") String deviceType,
-                      @Param("browser") String browser,
-                      @Param("os") String os,
-                      @Param("inApp") boolean inApp,
-                      @Param("inAppSource") String inAppSource,
-                      @Param("screenResolution") String screenResolution,
-                      @Param("timezone") String timezone,
-                      @Param("language") String language);
-
-    /** Counters only ever move forward; active dwell can never exceed total duration. */
-    @Modifying
-    @Query(value = """
-            UPDATE analytics_sessions
-            SET duration_seconds     = GREATEST(duration_seconds, :duration),
-                active_dwell_seconds = LEAST(GREATEST(active_dwell_seconds, :active),
-                                             GREATEST(duration_seconds, :duration)),
-                last_active_at       = now()
-            WHERE session_id = :sessionId
-            """, nativeQuery = true)
-    int updateHeartbeat(@Param("sessionId") UUID sessionId,
-                        @Param("duration") int duration,
-                        @Param("active") int active);
+    // =========================================================================
+    // 1. INGESTION & ATOMIC UPSERTS
+    // =========================================================================
 
     @Modifying
     @Query(value = """
-            UPDATE analytics_sessions
-            SET applied        = TRUE,
-                applied_at     = COALESCE(applied_at, now()),
-                last_active_at = now()
-            WHERE session_id = :sessionId
-            """, nativeQuery = true)
-    int markApplicationConverted(@Param("sessionId") UUID sessionId);
+        INSERT INTO public.analytics_daily_visitors (id, visitor_hash, visit_date, first_seen_at)
+        SELECT gen_random_uuid(), :visitorHash, (NOW() AT TIME ZONE 'Asia/Kolkata')::date, NOW()
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.analytics_daily_visitors d
+            WHERE d.visitor_hash = :visitorHash
+              AND d.visit_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+        )
+        """, nativeQuery = true)
+    void recordDailyUniqueVisitor(@Param("visitorHash") String visitorHash);
 
-    /**
-     * Opt-in lead capture. Copies first-touch attribution from the session at insert time.
-     * Returns 0 if the session does not exist.
-     */
     @Modifying
     @Query(value = """
-            INSERT INTO analytics_leads (
-                email, full_name, phone, user_type, consent_marketing, consent_text,
-                session_id, first_channel, first_utm_source, first_utm_medium,
-                first_utm_campaign, first_utm_content, first_referrer, first_city)
-            SELECT :email, :fullName, :phone, :userType, TRUE, :consentText,
-                   s.session_id, s.channel, s.utm_source, s.utm_medium,
-                   s.utm_campaign, s.utm_content, s.referrer, s.city
-            FROM analytics_sessions s
-            WHERE s.session_id = :sessionId
-            ON CONFLICT (email) DO UPDATE SET
-                full_name  = COALESCE(EXCLUDED.full_name, analytics_leads.full_name),
-                phone      = COALESCE(EXCLUDED.phone, analytics_leads.phone),
-                user_type  = COALESCE(EXCLUDED.user_type, analytics_leads.user_type),
-                updated_at = now()
-            """, nativeQuery = true)
-    int upsertLead(@Param("sessionId") UUID sessionId,
-                   @Param("email") String email,
-                   @Param("fullName") String fullName,
-                   @Param("phone") String phone,
-                   @Param("userType") String userType,
-                   @Param("consentText") String consentText);
+        INSERT INTO public.analytics_sessions (
+            session_id, visitor_hash, person_id, entry_path, last_path,
+            referrer, referrer_domain, utm_source, utm_medium, utm_campaign,
+            utm_content, utm_term, campaign_id, channel, country, region, city,
+            device_type, browser, os, in_app_browser, in_app_source,
+            screen_resolution, timezone, language, returning_visitor,
+            page_views, duration_seconds, active_dwell_seconds, applied,
+            created_at, last_active_at
+        )
+        VALUES (
+            :sessionId, :visitorHash, :visitorHash, :path, :path,
+            :referrer, :referrerDomain, :utmSource, :utmMedium, :utmCampaign,
+            :utmContent, :utmTerm, CAST(:campaignId AS UUID), :channel, :country, :region, :city,
+            :deviceType, :browser, :os, :inAppBrowser, :inAppSource,
+            :screenResolution, :timezone, :language,
+            EXISTS (SELECT 1 FROM public.analytics_sessions s WHERE s.visitor_hash = :visitorHash AND s.session_id <> :sessionId),
+            1, 0, 0, FALSE, NOW(), NOW()
+        )
+        ON CONFLICT (session_id) DO UPDATE SET
+            last_path = EXCLUDED.last_path,
+            page_views = public.analytics_sessions.page_views + 1,
+            engaged = TRUE,
+            campaign_id = COALESCE(EXCLUDED.campaign_id, public.analytics_sessions.campaign_id),
+            country = CASE WHEN public.analytics_sessions.country IS NULL OR public.analytics_sessions.country = 'XX' THEN EXCLUDED.country ELSE public.analytics_sessions.country END,
+            region = CASE WHEN public.analytics_sessions.region IS NULL OR public.analytics_sessions.region = 'Unknown' THEN EXCLUDED.region ELSE public.analytics_sessions.region END,
+            city = CASE WHEN public.analytics_sessions.city IS NULL OR public.analytics_sessions.city = 'Unknown' THEN EXCLUDED.city ELSE public.analytics_sessions.city END,
+            last_active_at = NOW()
+        """, nativeQuery = true)
+    void upsertSession(
+            @Param("sessionId") UUID sessionId,
+            @Param("visitorHash") String visitorHash,
+            @Param("path") String path,
+            @Param("referrer") String referrer,
+            @Param("referrerDomain") String referrerDomain,
+            @Param("utmSource") String utmSource,
+            @Param("utmMedium") String utmMedium,
+            @Param("utmCampaign") String utmCampaign,
+            @Param("utmContent") String utmContent,
+            @Param("utmTerm") String utmTerm,
+            @Param("campaignId") String campaignId,
+            @Param("channel") String channel,
+            @Param("country") String country,
+            @Param("region") String region,
+            @Param("city") String city,
+            @Param("deviceType") String deviceType,
+            @Param("browser") String browser,
+            @Param("os") String os,
+            @Param("inAppBrowser") boolean inAppBrowser,
+            @Param("inAppSource") String inAppSource,
+            @Param("screenResolution") String screenResolution,
+            @Param("timezone") String timezone,
+            @Param("language") String language
+    );
 
-    // ------------------------------------------------------------------
-    // LIVE + TRAFFIC VOLUME
-    // ------------------------------------------------------------------
+    @Modifying
+    @Query(value = """
+        UPDATE public.analytics_sessions
+        SET duration_seconds = GREATEST(duration_seconds, :durationSeconds),
+            active_dwell_seconds = GREATEST(active_dwell_seconds, :activeDwellSeconds),
+            engaged = (engaged OR :activeDwellSeconds >= 15 OR page_views >= 2 OR applied),
+            last_active_at = NOW()
+        WHERE session_id = :sessionId
+        """, nativeQuery = true)
+    void updateHeartbeat(
+            @Param("sessionId") UUID sessionId,
+            @Param("durationSeconds") int durationSeconds,
+            @Param("activeDwellSeconds") int activeDwellSeconds
+    );
 
-    @Query(value = "SELECT COUNT(*) FROM analytics_sessions WHERE last_active_at >= now() - interval '5 minutes'",
-            nativeQuery = true)
+    @Modifying
+    @Query(value = """
+        UPDATE public.analytics_sessions
+        SET applied = TRUE,
+            engaged = TRUE,
+            applied_at = COALESCE(applied_at, NOW()),
+            last_active_at = NOW()
+        WHERE session_id = :sessionId
+        """, nativeQuery = true)
+    void markApplicationConverted(@Param("sessionId") UUID sessionId);
+
+    @Modifying
+    @Query(value = """
+        INSERT INTO public.analytics_leads (
+            session_id, visitor_hash, email, full_name, phone, user_type, consent_text, created_at
+        )
+        SELECT s.session_id, s.visitor_hash, :email, :fullName, :phone, :userType, :consentText, NOW()
+        FROM public.analytics_sessions s
+        WHERE s.session_id = :sessionId
+        ON CONFLICT (session_id) DO UPDATE SET
+            email = EXCLUDED.email,
+            full_name = COALESCE(EXCLUDED.full_name, public.analytics_leads.full_name),
+            phone = COALESCE(EXCLUDED.phone, public.analytics_leads.phone),
+            user_type = COALESCE(EXCLUDED.user_type, public.analytics_leads.user_type)
+        """, nativeQuery = true)
+    int upsertLead(
+            @Param("sessionId") UUID sessionId,
+            @Param("email") String email,
+            @Param("fullName") String fullName,
+            @Param("phone") String phone,
+            @Param("userType") String userType,
+            @Param("consentText") String consentText
+    );
+
+    // =========================================================================
+    // 2. REAL-TIME & UNIQUE PERSON COUNTERS
+    // =========================================================================
+
+    /** Counts distinct real people active in the last 5 minutes, not raw sessions. */
+    @Query(value = """
+        SELECT COUNT(DISTINCT COALESCE(person_id, visitor_hash))
+        FROM public.analytics_sessions
+        WHERE last_active_at >= NOW() - INTERVAL '5 minutes'
+        """, nativeQuery = true)
     long countLiveActiveUsers();
 
     @Query(value = """
-            SELECT COUNT(DISTINCT campaign_id) FROM analytics_sessions
-            WHERE last_active_at >= now() - interval '5 minutes' AND campaign_id IS NOT NULL
-            """, nativeQuery = true)
+        SELECT COUNT(DISTINCT COALESCE(person_id, visitor_hash))
+        FROM public.analytics_sessions
+        WHERE last_active_at >= NOW() - INTERVAL '5 minutes'
+          AND (last_path LIKE '/campaigns%' OR campaign_id IS NOT NULL)
+        """, nativeQuery = true)
     long countLiveViewingCampaigns();
 
     @Query(value = """
-            SELECT COUNT(*) FROM analytics_daily_visitors
-            WHERE visit_date = CAST(now() AT TIME ZONE 'Asia/Kolkata' AS date)
-            """, nativeQuery = true)
+        SELECT COUNT(DISTINCT COALESCE(person_id, visitor_hash))
+        FROM public.analytics_sessions
+        WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+        """, nativeQuery = true)
     long countTodayUniqueVisitors();
 
     @Query(value = """
-            SELECT COUNT(DISTINCT visitor_hash) FROM analytics_daily_visitors
-            WHERE visit_date >= CAST(date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AS date)
-            """, nativeQuery = true)
+        SELECT COUNT(DISTINCT COALESCE(person_id, visitor_hash))
+        FROM public.analytics_sessions
+        WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date >= (NOW() AT TIME ZONE 'Asia/Kolkata')::date - 6
+        """, nativeQuery = true)
+    long countThisWeekUniqueVisitors();
+
+    @Query(value = """
+        SELECT COUNT(DISTINCT COALESCE(person_id, visitor_hash))
+        FROM public.analytics_sessions
+        WHERE date_trunc('month', created_at AT TIME ZONE 'Asia/Kolkata') = date_trunc('month', NOW() AT TIME ZONE 'Asia/Kolkata')
+        """, nativeQuery = true)
     long countThisMonthUniqueVisitors();
 
-    @Query(value = "SELECT COUNT(DISTINCT visitor_hash) FROM analytics_daily_visitors", nativeQuery = true)
+    @Query(value = """
+        SELECT COUNT(DISTINCT COALESCE(person_id, visitor_hash))
+        FROM public.analytics_sessions
+        """, nativeQuery = true)
     long countTotalAllTimeUniqueVisitors();
 
-    @Query(value = """
-            SELECT visit_date AS day, COUNT(*) AS visitors
-            FROM analytics_daily_visitors
-            WHERE visit_date >= CAST(now() AT TIME ZONE 'Asia/Kolkata' AS date) - CAST(:days AS integer)
-            GROUP BY visit_date
-            ORDER BY visit_date
-            """, nativeQuery = true)
-    List<Map<String, Object>> getDailyVisitorTrend(@Param("days") int days);
+    // =========================================================================
+    // 3. OVERVIEW AGGREGATES & ENGAGEMENT
+    // =========================================================================
 
-    // ------------------------------------------------------------------
-    // AGGREGATES OVER A TIME WINDOW (last :days days)
-    // ------------------------------------------------------------------
-
-    /** One row, always. Aggregates without GROUP BY return a row even on an empty table. */
     @Query(value = """
-            SELECT COUNT(*)                                                     AS total_sessions,
-                   COALESCE(AVG(duration_seconds), 0)                           AS avg_duration,
-                   COALESCE(AVG(active_dwell_seconds), 0)                       AS avg_active,
-                   COALESCE(AVG(page_views), 0)                                 AS avg_pages,
-                   COALESCE(100.0 * COUNT(*) FILTER (WHERE duration_seconds < 10 AND page_views <= 1)
-                            / NULLIF(COUNT(*), 0), 0)                           AS bounce_rate,
-                   COALESCE(100.0 * COUNT(*) FILTER (WHERE device_type = 'Mobile')
-                            / NULLIF(COUNT(*), 0), 0)                           AS mobile_pct,
-                   COALESCE(100.0 * COUNT(*) FILTER (WHERE device_type = 'Desktop')
-                            / NULLIF(COUNT(*), 0), 0)                           AS desktop_pct,
-                   COALESCE(100.0 * COUNT(*) FILTER (WHERE device_type = 'Tablet')
-                            / NULLIF(COUNT(*), 0), 0)                           AS tablet_pct,
-                   COALESCE(100.0 * COUNT(*) FILTER (WHERE in_app_browser)
-                            / NULLIF(COUNT(*), 0), 0)                           AS in_app_pct,
-                   COALESCE(100.0 * COUNT(*) FILTER (WHERE returning_visitor)
-                            / NULLIF(COUNT(*), 0), 0)                           AS returning_pct,
-                   COUNT(*) FILTER (WHERE applied)                              AS applied_sessions
-            FROM analytics_sessions
-            WHERE created_at >= now() - (CAST(:days AS integer) * interval '1 day')
-            """, nativeQuery = true)
+        SELECT
+            COUNT(*) AS total_sessions,
+            COUNT(DISTINCT COALESCE(person_id, visitor_hash)) AS unique_people,
+            COUNT(*) FILTER (WHERE applied = TRUE) AS applied_sessions,
+            COUNT(DISTINCT COALESCE(person_id, visitor_hash)) FILTER (WHERE applied = TRUE) AS applied_people,
+            COALESCE(AVG(duration_seconds), 0) AS avg_duration,
+            COALESCE(AVG(active_dwell_seconds), 0) AS avg_active,
+            COALESCE(AVG(page_views), 0) AS avg_pages,
+            COALESCE(AVG(max_scroll_depth), 0) AS avg_scroll_depth,
+            COALESCE(100.0 * COUNT(*) FILTER (WHERE NOT (active_dwell_seconds >= 15 OR page_views >= 2 OR applied = TRUE)) / NULLIF(COUNT(*), 0), 0) AS bounce_rate,
+            COALESCE(100.0 * COUNT(*) FILTER (WHERE active_dwell_seconds >= 15 OR page_views >= 2 OR applied = TRUE) / NULLIF(COUNT(*), 0), 0) AS engaged_rate,
+            COALESCE(100.0 * COUNT(*) FILTER (WHERE device_type = 'Mobile') / NULLIF(COUNT(*), 0), 0) AS mobile_pct,
+            COALESCE(100.0 * COUNT(*) FILTER (WHERE device_type = 'Desktop') / NULLIF(COUNT(*), 0), 0) AS desktop_pct,
+            COALESCE(100.0 * COUNT(*) FILTER (WHERE device_type = 'Tablet') / NULLIF(COUNT(*), 0), 0) AS tablet_pct,
+            COALESCE(100.0 * COUNT(*) FILTER (WHERE in_app_browser = TRUE) / NULLIF(COUNT(*), 0), 0) AS in_app_pct,
+            COALESCE(100.0 * COUNT(*) FILTER (WHERE returning_visitor = TRUE) / NULLIF(COUNT(*), 0), 0) AS returning_pct,
+            COALESCE(100.0 * COUNT(*) FILTER (WHERE is_vpn_or_proxy = TRUE OR is_datacenter = TRUE OR timezone_mismatch = TRUE) / NULLIF(COUNT(*), 0), 0) AS vpn_pct
+        FROM public.analytics_sessions
+        WHERE created_at >= NOW() - CAST(:days || ' days' AS INTERVAL)
+        """, nativeQuery = true)
     Map<String, Object> getSessionSummary(@Param("days") int days);
 
     @Query(value = """
-            SELECT channel,
-                   COUNT(*)                                        AS sessions,
-                   COUNT(DISTINCT visitor_hash)                    AS visitors,
-                   COUNT(*) FILTER (WHERE applied)                 AS applies,
-                   COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE applied)
-                                  / NULLIF(COUNT(*), 0), 1), 0)    AS conversion_rate,
-                   COALESCE(ROUND(AVG(active_dwell_seconds)), 0)   AS avg_active_seconds
-            FROM analytics_sessions
-            WHERE created_at >= now() - (CAST(:days AS integer) * interval '1 day')
-            GROUP BY channel
-            ORDER BY sessions DESC
-            LIMIT 10
-            """, nativeQuery = true)
-    List<Map<String, Object>> getTopTrafficChannels(@Param("days") int days);
-
-    @Query(value = """
-            SELECT utm_campaign, utm_source, utm_medium,
-                   COUNT(*)                                        AS sessions,
-                   COUNT(*) FILTER (WHERE applied)                 AS applies,
-                   COALESCE(ROUND(100.0 * COUNT(*) FILTER (WHERE applied)
-                                  / NULLIF(COUNT(*), 0), 1), 0)    AS conversion_rate,
-                   COALESCE(ROUND(AVG(active_dwell_seconds)), 0)   AS avg_active_seconds
-            FROM analytics_sessions
-            WHERE created_at >= now() - (CAST(:days AS integer) * interval '1 day')
-              AND utm_campaign IS NOT NULL
-            GROUP BY utm_campaign, utm_source, utm_medium
-            ORDER BY sessions DESC
-            LIMIT 10
-            """, nativeQuery = true)
-    List<Map<String, Object>> getTopCampaigns(@Param("days") int days);
-
-    @Query(value = """
-            SELECT referrer_domain, COUNT(*) AS sessions,
-                   COUNT(*) FILTER (WHERE applied) AS applies
-            FROM analytics_sessions
-            WHERE created_at >= now() - (CAST(:days AS integer) * interval '1 day')
-              AND referrer_domain IS NOT NULL
-            GROUP BY referrer_domain
-            ORDER BY sessions DESC
-            LIMIT 10
-            """, nativeQuery = true)
-    List<Map<String, Object>> getTopReferrers(@Param("days") int days);
-
-    @Query(value = """
-            SELECT entry_path, COUNT(*) AS sessions,
-                   COUNT(*) FILTER (WHERE applied) AS applies,
-                   COALESCE(ROUND(AVG(active_dwell_seconds)), 0) AS avg_active_seconds
-            FROM analytics_sessions
-            WHERE created_at >= now() - (CAST(:days AS integer) * interval '1 day')
-            GROUP BY entry_path
-            ORDER BY sessions DESC
-            LIMIT 10
-            """, nativeQuery = true)
-    List<Map<String, Object>> getTopLandingPages(@Param("days") int days);
-
-    @Query(value = """
-            SELECT COALESCE(city, 'Unknown') AS city,
-                   COALESCE(region, 'Unknown') AS region,
-                   COALESCE(country, 'XX') AS country,
-                   COUNT(*) AS sessions,
-                   COUNT(*) FILTER (WHERE applied) AS applies
-            FROM analytics_sessions
-            WHERE created_at >= now() - (CAST(:days AS integer) * interval '1 day')
-            GROUP BY city, region, country
-            ORDER BY sessions DESC
-            LIMIT 10
-            """, nativeQuery = true)
-    List<Map<String, Object>> getTopCities(@Param("days") int days);
-
-    @Query(value = """
-            SELECT COUNT(*) FROM analytics_leads
-            WHERE created_at >= now() - (CAST(:days AS integer) * interval '1 day')
-            """, nativeQuery = true)
+        SELECT COUNT(*)
+        FROM public.analytics_leads
+        WHERE created_at >= NOW() - CAST(:days || ' days' AS INTERVAL)
+        """, nativeQuery = true)
     long countLeadsSince(@Param("days") int days);
 
     @Query(value = """
-        SELECT email, full_name, phone, user_type, session_id, first_channel,
-               first_utm_source, first_utm_medium, first_utm_campaign, first_utm_content,
-               first_city, created_at
-        FROM analytics_leads
-        ORDER BY created_at DESC
-        LIMIT 500
+        SELECT
+            channel,
+            COUNT(*) AS sessions,
+            COUNT(DISTINCT COALESCE(person_id, visitor_hash)) AS unique_visitors,
+            COUNT(*) FILTER (WHERE applied = TRUE) AS conversions,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE applied = TRUE) / NULLIF(COUNT(*), 0), 1) AS conversion_rate
+        FROM public.analytics_sessions
+        WHERE created_at >= NOW() - CAST(:days || ' days' AS INTERVAL)
+        GROUP BY channel
+        ORDER BY unique_visitors DESC, sessions DESC
+        """, nativeQuery = true)
+    List<Map<String, Object>> getTopTrafficChannels(@Param("days") int days);
+
+    @Query(value = """
+        SELECT
+            CAST(s.campaign_id AS VARCHAR) AS campaign_id,
+            COALESCE(mc.title, c.campaign_title, 'Campaign ' || SUBSTRING(CAST(s.campaign_id AS VARCHAR), 1, 8)) AS campaign_title,
+            COUNT(*) AS sessions,
+            COUNT(DISTINCT COALESCE(s.person_id, s.visitor_hash)) AS unique_visitors,
+            COUNT(*) FILTER (WHERE s.applied = TRUE) AS conversions,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE s.applied = TRUE) / NULLIF(COUNT(*), 0), 1) AS conversion_rate
+        FROM public.analytics_sessions s
+        LEFT JOIN public.managed_campaigns mc ON mc.id = s.campaign_id
+        LEFT JOIN public.campaigns c ON c.id = s.campaign_id
+        WHERE s.campaign_id IS NOT NULL
+          AND s.created_at >= NOW() - CAST(:days || ' days' AS INTERVAL)
+        GROUP BY s.campaign_id, mc.title, c.campaign_title
+        ORDER BY unique_visitors DESC
+        LIMIT 15
+        """, nativeQuery = true)
+    List<Map<String, Object>> getTopCampaigns(@Param("days") int days);
+
+    @Query(value = """
+        SELECT
+            COALESCE(referrer_domain, 'Direct / None') AS referrer_domain,
+            COUNT(*) AS sessions,
+            COUNT(DISTINCT COALESCE(person_id, visitor_hash)) AS unique_visitors,
+            COUNT(*) FILTER (WHERE applied = TRUE) AS conversions
+        FROM public.analytics_sessions
+        WHERE created_at >= NOW() - CAST(:days || ' days' AS INTERVAL)
+        GROUP BY COALESCE(referrer_domain, 'Direct / None')
+        ORDER BY unique_visitors DESC
+        LIMIT 15
+        """, nativeQuery = true)
+    List<Map<String, Object>> getTopReferrers(@Param("days") int days);
+
+    @Query(value = """
+        SELECT
+            entry_path AS path,
+            COUNT(*) AS sessions,
+            COUNT(DISTINCT COALESCE(person_id, visitor_hash)) AS unique_visitors,
+            ROUND(AVG(active_dwell_seconds), 1) AS avg_active_seconds,
+            ROUND(AVG(max_scroll_depth), 0) AS avg_scroll_depth,
+            COUNT(*) FILTER (WHERE applied = TRUE) AS conversions
+        FROM public.analytics_sessions
+        WHERE created_at >= NOW() - CAST(:days || ' days' AS INTERVAL)
+        GROUP BY entry_path
+        ORDER BY unique_visitors DESC
+        LIMIT 15
+        """, nativeQuery = true)
+    List<Map<String, Object>> getTopLandingPages(@Param("days") int days);
+
+    @Query(value = """
+        SELECT
+            COALESCE(NULLIF(city, 'Unknown'), 'Unknown') AS city,
+            COALESCE(NULLIF(region, 'Unknown'), 'Unknown') AS region,
+            COALESCE(NULLIF(country, 'XX'), 'Unknown') AS country,
+            AVG(latitude) AS lat,
+            AVG(longitude) AS lon,
+            COUNT(*) AS sessions,
+            COUNT(DISTINCT COALESCE(person_id, visitor_hash)) AS unique_visitors,
+            COUNT(*) FILTER (WHERE applied = TRUE) AS conversions
+        FROM public.analytics_sessions
+        WHERE created_at >= NOW() - CAST(:days || ' days' AS INTERVAL)
+        GROUP BY COALESCE(NULLIF(city, 'Unknown'), 'Unknown'),
+                 COALESCE(NULLIF(region, 'Unknown'), 'Unknown'),
+                 COALESCE(NULLIF(country, 'XX'), 'Unknown')
+        ORDER BY unique_visitors DESC
+        LIMIT 25
+        """, nativeQuery = true)
+    List<Map<String, Object>> getTopCities(@Param("days") int days);
+
+    @Query(value = """
+        SELECT
+            to_char((created_at AT TIME ZONE 'Asia/Kolkata')::date, 'YYYY-MM-DD') AS day,
+            COUNT(DISTINCT COALESCE(person_id, visitor_hash)) AS unique_visitors,
+            COUNT(*) AS sessions,
+            COUNT(*) FILTER (WHERE active_dwell_seconds >= 15 OR page_views >= 2 OR applied = TRUE) AS engaged_sessions,
+            COUNT(*) FILTER (WHERE applied = TRUE) AS conversions
+        FROM public.analytics_sessions
+        WHERE created_at >= NOW() - CAST(:days || ' days' AS INTERVAL)
+        GROUP BY (created_at AT TIME ZONE 'Asia/Kolkata')::date
+        ORDER BY (created_at AT TIME ZONE 'Asia/Kolkata')::date ASC
+        """, nativeQuery = true)
+    List<Map<String, Object>> getDailyVisitorTrend(@Param("days") int days);
+
+    @Query(value = """
+        SELECT
+            l.session_id,
+            COALESCE(s.person_id, l.visitor_hash) AS person_id,
+            l.email,
+            l.full_name,
+            l.phone,
+            l.user_type,
+            l.consent_text,
+            l.created_at,
+            s.channel,
+            s.utm_source,
+            s.utm_campaign,
+            s.city,
+            s.region,
+            s.country,
+            s.device_type,
+            s.browser,
+            s.os
+        FROM public.analytics_leads l
+        LEFT JOIN public.analytics_sessions s ON s.session_id = l.session_id
+        ORDER BY l.created_at DESC
+        LIMIT 200
         """, nativeQuery = true)
     List<Map<String, Object>> getRecentLeads();
 }
