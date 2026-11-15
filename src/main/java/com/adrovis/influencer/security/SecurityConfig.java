@@ -70,6 +70,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/inquiries",
                                 "/api/v1/analytics/track", "/api/v1/analytics/heartbeat",
                                 "/api/v1/analytics/conversion", "/api/v1/analytics/lead",
+                                "/api/v1/analytics/event", "/api/v1/analytics/identify",
                                 "/api/v1/campaigns/{id}/apply-access").permitAll()
                         .requestMatchers(HttpMethod.GET, "/swagger-ui.html", "/swagger-ui/**",
                                 "/v3/api-docs", "/v3/api-docs/**").permitAll()
@@ -176,9 +177,8 @@ public class SecurityConfig {
                         .anyRequest().denyAll())
                 .build();
     }
+
     /** Separates invalid credentials from an unavailable trusted account check. */
-
-
     private static void unauthorized(HttpServletResponse response, Exception exception) throws IOException {
         log.warn("Auth rejected: {} - {}", exception.getClass().getSimpleName(), exception.getMessage());
         if (exception instanceof AuthenticationServiceException) {
@@ -187,8 +187,9 @@ public class SecurityConfig {
             response.setHeader("WWW-Authenticate", "Bearer");
             error(response, 401, "UNAUTHORIZED");
         }
-    }    /** Writes a minimal security error without token, exception or infrastructure details. */
+    }
 
+    /** Writes a minimal security error without token, exception or infrastructure details. */
     private static void error(HttpServletResponse response, int status, String code) throws IOException {
         response.setStatus(status);
         response.setContentType("application/json");
