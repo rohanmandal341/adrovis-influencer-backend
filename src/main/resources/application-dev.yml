@@ -1,3 +1,5 @@
+server:
+  port: ${PORT:8082}
 spring:
   datasource:
     # 1. Stockholm IPv4 Connection Pooler URL

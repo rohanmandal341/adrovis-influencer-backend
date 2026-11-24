@@ -20,6 +20,7 @@ public class PublicCampaignResponse {
     private String brandInstagramUrl;
     private String campaignTitle;
     private String campaignType;
+    private String description;
     private String applyProxyUrl;
     private List<String> images;
     private Map<String, Object> compensation;
