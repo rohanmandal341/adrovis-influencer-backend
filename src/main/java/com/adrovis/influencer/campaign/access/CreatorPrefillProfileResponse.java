@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -25,5 +26,9 @@ public class CreatorPrefillProfileResponse {
     private String pincode;
     private String youtubeUrl;
     private String portfolioUrl;
+    private Integer age;
+    private String profileType;
+    private String preferredLanguage;
     private List<String> niches;
+    private Map<String, String> customFields;
 }
