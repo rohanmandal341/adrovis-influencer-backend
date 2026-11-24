@@ -27,7 +27,6 @@ public class CampaignService {
 
     @Value("${app.backend-base-url:https://adrovis-influencer-backend.onrender.com}")
     private String backendBaseUrl;
-    /** Preserves campaign search filters, paging and public response mapping. */
 
     @Transactional(readOnly = true)
     public Page<PublicCampaignResponse> getFilteredCampaigns(CampaignFilterRequest filter) {
@@ -46,7 +45,6 @@ public class CampaignService {
         );
         return entities.map(this::mapToPublicResponse);
     }
-    /** Preserves active campaign lookup and view tracking for public discovery. */
 
     @Transactional
     public PublicCampaignResponse getCampaignById(UUID id) {
@@ -56,12 +54,14 @@ public class CampaignService {
         campaignRepository.incrementViewsCount(id);
         return mapToPublicResponse(campaign);
     }
-    /** Rejects missing or invalid external links before any guest allowance is consumed. */
 
     @Transactional(readOnly = true)
     public String getApplicationDestination(UUID id) {
         CampaignEntity campaign = campaignRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Campaign not found with ID: " + id));
+        if (!Boolean.TRUE.equals(campaign.getIsActive())) {
+            throw new ResourceNotFoundException("Campaign not found with ID: " + id);
+        }
         String destination = campaign.getApplicationFormUrl();
         try {
             java.net.URI uri = java.net.URI.create(destination);
@@ -74,7 +74,6 @@ public class CampaignService {
         }
         return destination;
     }
-    /** Records only allowed application clicks within the primary transaction. */
 
     @Transactional
     public String trackAndGetApplicationUrl(UUID id) {
@@ -83,21 +82,20 @@ public class CampaignService {
         log.info("Application click recorded for campaign ID: {}", id);
         return destination;
     }
-    /** Preserves the public campaign DTO and proxy link rather than returning persistence entities. */
 
     @SuppressWarnings("unchecked")
-    private PublicCampaignResponse mapToPublicResponse(CampaignEntity entity) {
+    public PublicCampaignResponse mapToPublicResponse(CampaignEntity entity) {
         Map<String, Object> data = entity.getCanonicalData();
         if (data == null) {
             data = Collections.emptyMap();
         }
 
-        // 1. Resolve Images: strictly deduplicated, max 4 images
+        // 1. Resolve Images: strictly deduplicated, max 6 images
         List<String> imageUrls = entity.getImages().stream()
                 .map(CampaignImageEntity::getPublicUrl)
                 .filter(url -> url != null && !url.isBlank())
                 .distinct()
-                .limit(4)
+                .limit(6)
                 .collect(Collectors.toList());
 
         if (imageUrls.isEmpty() && data.containsKey("images")) {
@@ -107,12 +105,12 @@ public class CampaignService {
                         .map(Object::toString)
                         .filter(url -> url != null && !url.isBlank())
                         .distinct()
-                        .limit(4)
+                        .limit(6)
                         .collect(Collectors.toList());
             }
         }
 
-        // 2. Resolve nested campaign_details (fixes deliverables, categories, adRights, productName)
+        // 2. Resolve nested campaign_details
         Map<String, Object> campaignDetails = (Map<String, Object>) data.getOrDefault("campaign_details", Collections.emptyMap());
 
         List<String> deliverables = (List<String>) data.get("deliverables");
@@ -135,14 +133,19 @@ public class CampaignService {
             productName = (String) campaignDetails.get("product_details");
         }
 
-        // 3. Resolve Compensation & Eligibility
+        String description = (String) data.get("description");
+        if (description == null || description.isBlank()) {
+            description = (String) campaignDetails.get("description");
+        }
+
+        // 3. Resolve Compensation, Eligibility & Schedule
         Map<String, Object> comp = (Map<String, Object>) data.getOrDefault("compensation", Collections.emptyMap());
         Map<String, Object> eligibility = (Map<String, Object>) data.getOrDefault("eligibility", Collections.emptyMap());
         Map<String, Object> schedule = (Map<String, Object>) data.getOrDefault("schedule", Collections.emptyMap());
         List<String> reqs = (List<String>) data.getOrDefault("important_requirements", Collections.emptyList());
         List<String> refs = (List<String>) data.getOrDefault("reference_links", Collections.emptyList());
 
-        // 4. Dynamic Proxy URL Resolution (Stripping local host and trailing slashes)
+        // 4. Dynamic Proxy URL Resolution
         String baseUrl = backendBaseUrl != null ? backendBaseUrl.replaceAll("/+$", "") : "https://adrovis-influencer-backend.onrender.com";
         String proxyUrl = baseUrl + "/api/v1/campaigns/" + entity.getId() + "/apply";
 
@@ -152,6 +155,7 @@ public class CampaignService {
                 .brandInstagramUrl(entity.getBrandInstagramUrl())
                 .campaignTitle(entity.getCampaignTitle())
                 .campaignType(entity.getCampaignType())
+                .description(description)
                 .applyProxyUrl(proxyUrl)
                 .images(imageUrls)
                 .compensation(comp)

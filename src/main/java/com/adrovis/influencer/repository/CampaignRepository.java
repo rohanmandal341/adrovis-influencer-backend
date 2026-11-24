@@ -18,7 +18,16 @@ public interface CampaignRepository extends JpaRepository<CampaignEntity, UUID> 
     @Query("SELECT c FROM CampaignEntity c LEFT JOIN FETCH c.images WHERE c.id = :id AND c.isActive = true")
     Optional<CampaignEntity> findActiveByIdWithImages(@Param("id") UUID id);
 
+    @Query("SELECT c FROM CampaignEntity c LEFT JOIN FETCH c.images WHERE c.id = :id")
+    Optional<CampaignEntity> findByIdWithImages(@Param("id") UUID id);
+
     Optional<CampaignEntity> findByApplicationFormUrl(String applicationFormUrl);
+
+    Page<CampaignEntity> findByApprovalStatusOrderByCreatedAtDesc(String approvalStatus, Pageable pageable);
+
+    Page<CampaignEntity> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    long countByApprovalStatus(String approvalStatus);
 
     @Modifying
     @Query("UPDATE CampaignEntity c SET c.viewsCount = c.viewsCount + 1 WHERE c.id = :id")

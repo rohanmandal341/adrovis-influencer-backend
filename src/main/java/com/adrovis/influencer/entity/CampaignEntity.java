@@ -46,7 +46,11 @@ public class CampaignEntity {
 
     @Column(name = "is_active")
     @Builder.Default
-    private Boolean isActive = true;
+    private Boolean isActive = false;
+
+    @Column(name = "approval_status", nullable = false, length = 20)
+    @Builder.Default
+    private String approvalStatus = "PENDING";
 
     @Column(name = "views_count")
     @Builder.Default
