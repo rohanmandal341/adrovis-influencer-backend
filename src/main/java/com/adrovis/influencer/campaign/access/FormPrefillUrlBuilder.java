@@ -78,13 +78,13 @@ public class FormPrefillUrlBuilder {
                     .build();
         }
 
-        // 2. Build usp=pp_url query parameters
+        // 2. Build usp=pp_url query parameters + exact showcase map of what was filled on THIS form
         List<String> queryPairs = new ArrayList<>();
         queryPairs.add("usp=pp_url");
 
         int filledCount = 0;
         Map<String, String> scalar = vault.getScalarValues();
-        Map<String, String> filledShowcase = new LinkedHashMap<>(vault.getQuickCopyData());
+        Map<String, String> filledShowcase = new LinkedHashMap<>();
 
         for (Map<String, Object> q : prefillMap) {
             String entryId = asString(q.get("entry_id"));
@@ -92,6 +92,8 @@ public class FormPrefillUrlBuilder {
             String fieldType = asString(q.get("field_type"));
             String confirmOption = asString(q.get("confirm_option"));
             String promptLabel = asString(q.get("prompt_label"));
+            String rawLabel = asString(q.get("label"));
+            String displayLabel = !promptLabel.isBlank() ? promptLabel : (!rawLabel.isBlank() ? rawLabel : humanizeKey(semanticKey));
             boolean hasOther = Boolean.TRUE.equals(q.get("has_other_option"));
             List<String> options = extractOptions(q.get("options"));
 
@@ -105,28 +107,24 @@ public class FormPrefillUrlBuilder {
                     chosen = options.get(0);
                 }
                 queryPairs.add(encodeParam(entryId, chosen));
+                filledShowcase.putIfAbsent(displayLabel, chosen);
                 filledCount++;
                 continue;
             }
 
             if ("confirm_yes".equals(semanticKey)) {
                 if (options.isEmpty()) {
-                    queryPairs.add(encodeParam(entryId, !confirmOption.isBlank() ? confirmOption : "Yes"));
+                    String val = !confirmOption.isBlank() ? confirmOption : "Yes";
+                    queryPairs.add(encodeParam(entryId, val));
+                    filledShowcase.putIfAbsent(displayLabel, val);
                     filledCount++;
                 } else {
                     String yesOpt = !confirmOption.isBlank()
                             ? matchSingleChoice(confirmOption, options, false)
-                            : options.stream()
-                            .filter(o -> {
-                                String l = o.trim().toLowerCase(Locale.ROOT);
-                                return l.equals("yes") || l.startsWith("yes") || l.equals("interested")
-                                        || l.startsWith("i agree") || l.startsWith("i confirm")
-                                        || l.startsWith("already joined") || l.startsWith("joined") || l.startsWith("haan");
-                            })
-                            .findFirst()
-                            .orElse(null);
+                            : pickPositiveOption(options);
                     if (yesOpt != null) {
                         queryPairs.add(encodeParam(entryId, yesOpt));
+                        filledShowcase.putIfAbsent(displayLabel, yesOpt);
                         filledCount++;
                     }
                 }
@@ -140,8 +138,10 @@ public class FormPrefillUrlBuilder {
                         for (String opt : matchedOpts) {
                             queryPairs.add(encodeParam(entryId, opt));
                         }
+                        filledShowcase.putIfAbsent(displayLabel, String.join(", ", matchedOpts));
                     } else {
                         queryPairs.add(encodeParam(entryId, matchedOpts.get(0)));
+                        filledShowcase.putIfAbsent(displayLabel, matchedOpts.get(0));
                     }
                     filledCount++;
                 }
@@ -152,6 +152,7 @@ public class FormPrefillUrlBuilder {
                 String bracket = matchNumericBracket(vault.getFollowersCount(), options);
                 if (bracket != null) {
                     queryPairs.add(encodeParam(entryId, bracket));
+                    filledShowcase.putIfAbsent(displayLabel, bracket);
                     filledCount++;
                 }
                 continue;
@@ -162,23 +163,24 @@ public class FormPrefillUrlBuilder {
                 continue;
             }
 
-            // Include any dynamic custom field in the showcase modal
-            if (!promptLabel.isBlank() && !AUTO_DERIVED_KEYS.contains(semanticKey)) {
-                filledShowcase.putIfAbsent(promptLabel, rawVal);
-            }
-
             if (("RADIO".equals(fieldType) || "DROPDOWN".equals(fieldType) || "CHECKBOX".equals(fieldType))
                     && !options.isEmpty()) {
                 boolean allowOther = !"CHECKBOX".equals(fieldType) && hasOther;
                 String matchedOption = matchSingleChoice(rawVal, options, allowOther);
                 if (matchedOption != null) {
                     addChoiceParams(queryPairs, entryId, matchedOption, rawVal);
+                    filledShowcase.putIfAbsent(displayLabel, OTHER_SENTINEL.equals(matchedOption) ? rawVal : matchedOption);
                     filledCount++;
                 }
             } else {
                 queryPairs.add(encodeParam(entryId, rawVal));
+                filledShowcase.putIfAbsent(displayLabel, rawVal);
                 filledCount++;
             }
+        }
+
+        if (filledShowcase.isEmpty()) {
+            filledShowcase.putAll(vault.getQuickCopyData());
         }
 
         String finalUrl = filledCount > 0
@@ -349,7 +351,6 @@ public class FormPrefillUrlBuilder {
 
     private void addChoiceParams(List<String> queryPairs, String entryId, String matchedOption, String rawValue) {
         if (OTHER_SENTINEL.equals(matchedOption)) {
-            // Google Forms "Other" option: sentinel + the free-text response
             queryPairs.add(encodeParam(entryId, OTHER_SENTINEL));
             queryPairs.add(encodeParam(entryId + ".other_option_response", rawValue));
         } else {
@@ -435,10 +436,6 @@ public class FormPrefillUrlBuilder {
         return new ArrayList<>(matched);
     }
 
-    /**
-     * Word-boundary aware matching so "Female" never matches "Male".
-     * Returns the exact option text from the form, OTHER_SENTINEL when only an "Other" option fits, or null.
-     */
     private String matchSingleChoice(String value, List<String> options, boolean hasOther) {
         if (value == null || value.isBlank()) return null;
 
@@ -476,7 +473,6 @@ public class FormPrefillUrlBuilder {
         return null;
     }
 
-    /** Lowercased, punctuation-stripped, space-padded form used for word-boundary comparisons. */
     private String tokens(String text) {
         if (text == null) return "";
         String words = text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
