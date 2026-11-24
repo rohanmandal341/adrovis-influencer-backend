@@ -7,7 +7,15 @@ import org.springframework.stereotype.Component;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,6 +23,14 @@ import java.util.regex.Pattern;
 public class FormPrefillUrlBuilder {
 
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+(?:,\\d+)*(?:\\.\\d+)?)\\s*([kKmM])?");
+    private static final String OTHER_SENTINEL = "__other_option__";
+
+    // Keys that are auto-derived from existing account data or auto-confirmed without asking the user
+    private static final Set<String> AUTO_DERIVED_KEYS = Set.of(
+            "full_name", "first_name", "last_name", "email",
+            "instagram_url", "instagram_handle", "instagram_handle_at",
+            "niches_list", "niches_csv", "confirm_checkbox", "confirm_yes"
+    );
 
     @SuppressWarnings("unchecked")
     public ApplyAccessResponse evaluateAndBuild(CampaignEntity entity, String rawDestinationUrl, CreatorVault vault) {
@@ -49,7 +65,7 @@ public class FormPrefillUrlBuilder {
                 .filter(q -> !asString(q.get("entry_id")).isBlank() && !asString(q.get("semantic_key")).isBlank())
                 .count();
 
-        // 1. Detect missing required core profile fields for Learn-As-You-Apply drawer
+        // 1. Dynamically detect ANY missing required field (built-in OR novel AI-discovered field)
         List<MissingFieldItem> missingFields = detectMissingRequiredFields(prefillMap, vault);
         if (!missingFields.isEmpty()) {
             return ApplyAccessResponse.builder()
@@ -68,11 +84,14 @@ public class FormPrefillUrlBuilder {
 
         int filledCount = 0;
         Map<String, String> scalar = vault.getScalarValues();
+        Map<String, String> filledShowcase = new LinkedHashMap<>(vault.getQuickCopyData());
 
         for (Map<String, Object> q : prefillMap) {
             String entryId = asString(q.get("entry_id"));
             String semanticKey = asString(q.get("semantic_key"));
             String fieldType = asString(q.get("field_type"));
+            String confirmOption = asString(q.get("confirm_option"));
+            String promptLabel = asString(q.get("prompt_label"));
             boolean hasOther = Boolean.TRUE.equals(q.get("has_other_option"));
             List<String> options = extractOptions(q.get("options"));
 
@@ -81,28 +100,48 @@ public class FormPrefillUrlBuilder {
             }
 
             if ("confirm_checkbox".equals(semanticKey) && !options.isEmpty()) {
-                queryPairs.add(encodeParam(entryId, options.get(0)));
+                String chosen = !confirmOption.isBlank() ? matchSingleChoice(confirmOption, options, false) : null;
+                if (chosen == null) {
+                    chosen = options.get(0);
+                }
+                queryPairs.add(encodeParam(entryId, chosen));
                 filledCount++;
                 continue;
             }
 
-            if ("confirm_yes".equals(semanticKey) && !options.isEmpty()) {
-                String yesOpt = options.stream()
-                        .filter(o -> o.equalsIgnoreCase("Yes") || o.toLowerCase(Locale.ROOT).startsWith("yes"))
-                        .findFirst()
-                        .orElse(null);
-                if (yesOpt != null) {
-                    queryPairs.add(encodeParam(entryId, yesOpt));
+            if ("confirm_yes".equals(semanticKey)) {
+                if (options.isEmpty()) {
+                    queryPairs.add(encodeParam(entryId, !confirmOption.isBlank() ? confirmOption : "Yes"));
                     filledCount++;
+                } else {
+                    String yesOpt = !confirmOption.isBlank()
+                            ? matchSingleChoice(confirmOption, options, false)
+                            : options.stream()
+                            .filter(o -> {
+                                String l = o.trim().toLowerCase(Locale.ROOT);
+                                return l.equals("yes") || l.startsWith("yes") || l.equals("interested")
+                                        || l.startsWith("i agree") || l.startsWith("i confirm")
+                                        || l.startsWith("already joined") || l.startsWith("joined") || l.startsWith("haan");
+                            })
+                            .findFirst()
+                            .orElse(null);
+                    if (yesOpt != null) {
+                        queryPairs.add(encodeParam(entryId, yesOpt));
+                        filledCount++;
+                    }
                 }
                 continue;
             }
 
-            if ("niches_list".equals(semanticKey) && "CHECKBOX".equals(fieldType) && !options.isEmpty()) {
+            if ("niches_list".equals(semanticKey) && !options.isEmpty()) {
                 List<String> matchedOpts = matchMultipleChoices(vault.getNichesList(), options);
                 if (!matchedOpts.isEmpty()) {
-                    for (String opt : matchedOpts) {
-                        queryPairs.add(encodeParam(entryId, opt));
+                    if ("CHECKBOX".equals(fieldType)) {
+                        for (String opt : matchedOpts) {
+                            queryPairs.add(encodeParam(entryId, opt));
+                        }
+                    } else {
+                        queryPairs.add(encodeParam(entryId, matchedOpts.get(0)));
                     }
                     filledCount++;
                 }
@@ -123,16 +162,17 @@ public class FormPrefillUrlBuilder {
                 continue;
             }
 
-            if (("RADIO".equals(fieldType) || "DROPDOWN".equals(fieldType)) && !options.isEmpty()) {
-                String matchedOption = matchSingleChoice(rawVal, options, hasOther);
+            // Include any dynamic custom field in the showcase modal
+            if (!promptLabel.isBlank() && !AUTO_DERIVED_KEYS.contains(semanticKey)) {
+                filledShowcase.putIfAbsent(promptLabel, rawVal);
+            }
+
+            if (("RADIO".equals(fieldType) || "DROPDOWN".equals(fieldType) || "CHECKBOX".equals(fieldType))
+                    && !options.isEmpty()) {
+                boolean allowOther = !"CHECKBOX".equals(fieldType) && hasOther;
+                String matchedOption = matchSingleChoice(rawVal, options, allowOther);
                 if (matchedOption != null) {
-                    queryPairs.add(encodeParam(entryId, matchedOption));
-                    filledCount++;
-                }
-            } else if ("CHECKBOX".equals(fieldType) && !options.isEmpty()) {
-                String matchedOption = matchSingleChoice(rawVal, options, false);
-                if (matchedOption != null) {
-                    queryPairs.add(encodeParam(entryId, matchedOption));
+                    addChoiceParams(queryPairs, entryId, matchedOption, rawVal);
                     filledCount++;
                 }
             } else {
@@ -152,7 +192,7 @@ public class FormPrefillUrlBuilder {
                 .totalMappedCount(totalMapped)
                 .requiresGoogleLogin(requiresLogin)
                 .missingFields(List.of())
-                .quickCopyData(vault.getQuickCopyData())
+                .quickCopyData(filledShowcase)
                 .build();
     }
 
@@ -165,7 +205,12 @@ public class FormPrefillUrlBuilder {
             boolean required = Boolean.TRUE.equals(q.get("required"));
             String key = asString(q.get("semantic_key"));
             String questionLabel = asString(q.get("label"));
-            if (!required || key.isBlank()) continue;
+            String promptLabel = asString(q.get("prompt_label"));
+            String promptReason = asString(q.get("prompt_reason"));
+            String inputType = asString(q.get("input_type"));
+            List<String> options = extractOptions(q.get("options"));
+
+            if (!required || key.isBlank() || AUTO_DERIVED_KEYS.contains(key)) continue;
 
             if ("followers_count".equals(key)) {
                 if (vault.getFollowersCount() == null || vault.getFollowersCount() <= 0 || vault.isFollowersStale()) {
@@ -224,10 +269,117 @@ public class FormPrefillUrlBuilder {
                         .type("TEXT")
                         .placeholder("e.g. Mumbai")
                         .build());
+            } else if ("state".equals(key) && isBlank(scalar.get("state"))) {
+                needed.putIfAbsent("state", MissingFieldItem.builder()
+                        .key("state")
+                        .label("State")
+                        .formQuestionLabel(questionLabel)
+                        .reason("Used for location eligibility and shipping region matching.")
+                        .type("TEXT")
+                        .placeholder("e.g. Maharashtra")
+                        .build());
+            } else if ("youtube_url".equals(key) && isBlank(scalar.get("youtube_url"))) {
+                needed.putIfAbsent("youtubeUrl", MissingFieldItem.builder()
+                        .key("youtubeUrl")
+                        .label(!promptLabel.isBlank() ? promptLabel : "YouTube Channel Link")
+                        .formQuestionLabel(questionLabel)
+                        .reason(!promptReason.isBlank() ? promptReason : "Lets the brand review your YouTube channel.")
+                        .type("TEXT")
+                        .placeholder("https://youtube.com/@yourchannel")
+                        .build());
+            } else if ("portfolio_url".equals(key) && isBlank(scalar.get("portfolio_url"))) {
+                needed.putIfAbsent("portfolioUrl", MissingFieldItem.builder()
+                        .key("portfolioUrl")
+                        .label(!promptLabel.isBlank() ? promptLabel : "Portfolio / Work Link")
+                        .formQuestionLabel(questionLabel)
+                        .reason(!promptReason.isBlank() ? promptReason : "Lets the brand review samples of your previous work.")
+                        .type("TEXT")
+                        .placeholder("Drive / Instagram / website link")
+                        .build());
+            } else if ("age".equals(key) && isBlank(scalar.get("age"))) {
+                needed.putIfAbsent("age", MissingFieldItem.builder()
+                        .key("age")
+                        .label(!promptLabel.isBlank() ? promptLabel : "Your Age")
+                        .formQuestionLabel(questionLabel)
+                        .reason(!promptReason.isBlank() ? promptReason : "Required by the brand for age eligibility.")
+                        .type("NUMBER")
+                        .placeholder("e.g. 23")
+                        .build());
+            } else if ("profile_type".equals(key) && isBlank(scalar.get("profile_type"))) {
+                needed.putIfAbsent("profileType", MissingFieldItem.builder()
+                        .key("profileType")
+                        .label(!promptLabel.isBlank() ? promptLabel : "Creator Profile Type")
+                        .formQuestionLabel(questionLabel)
+                        .reason(!promptReason.isBlank() ? promptReason : "Helps brands match on-camera vs. faceless creators.")
+                        .type("SELECT")
+                        .options(!options.isEmpty() ? options : List.of("Face Creator", "Faceless Creator"))
+                        .build());
+            } else if ("preferred_language".equals(key) && isBlank(scalar.get("preferred_language"))) {
+                needed.putIfAbsent("preferredLanguage", MissingFieldItem.builder()
+                        .key("preferredLanguage")
+                        .label(!promptLabel.isBlank() ? promptLabel : "Preferred Content Language")
+                        .formQuestionLabel(questionLabel)
+                        .reason(!promptReason.isBlank() ? promptReason : "Tells the brand which language you create content in.")
+                        .type(!options.isEmpty() ? "SELECT" : "TEXT")
+                        .options(options)
+                        .placeholder("e.g. Hindi, English")
+                        .build());
+            } else if (isBlank(scalar.get(key))) {
+                // 100% DYNAMIC CATCH-ALL: Any novel semantic_key (mother_name, skin_type, upi_id, etc.)
+                String dynamicRequestKey = "custom:" + key;
+                String resolvedType = !options.isEmpty()
+                        ? "SELECT"
+                        : ("NUMBER".equals(inputType) || "TEXTAREA".equals(inputType) ? inputType : "TEXT");
+                String shownLabel = !promptLabel.isBlank() ? promptLabel : humanizeKey(key);
+
+                needed.putIfAbsent(dynamicRequestKey, MissingFieldItem.builder()
+                        .key(dynamicRequestKey)
+                        .label(shownLabel)
+                        .formQuestionLabel(questionLabel)
+                        .reason(!promptReason.isBlank() ? promptReason : "Saved once to your vault and auto-filled on future forms.")
+                        .type(resolvedType)
+                        .options(options)
+                        .placeholder("Enter " + shownLabel.toLowerCase(Locale.ROOT))
+                        .build());
             }
         }
 
         return new ArrayList<>(needed.values());
+    }
+
+    private void addChoiceParams(List<String> queryPairs, String entryId, String matchedOption, String rawValue) {
+        if (OTHER_SENTINEL.equals(matchedOption)) {
+            // Google Forms "Other" option: sentinel + the free-text response
+            queryPairs.add(encodeParam(entryId, OTHER_SENTINEL));
+            queryPairs.add(encodeParam(entryId + ".other_option_response", rawValue));
+        } else {
+            queryPairs.add(encodeParam(entryId, matchedOption));
+        }
+    }
+
+    private String pickPositiveOption(List<String> options) {
+        for (String o : options) {
+            String l = o.trim().toLowerCase(Locale.ROOT);
+            if (l.equals("yes") || l.startsWith("yes") || l.equals("interested")
+                    || l.startsWith("i agree") || l.startsWith("agree") || l.startsWith("i confirm")
+                    || l.startsWith("i understand") || l.startsWith("already joined")
+                    || l.startsWith("joined") || l.startsWith("haan") || l.startsWith("sure")
+                    || l.startsWith("accept")) {
+                return o;
+            }
+        }
+        return null;
+    }
+
+    private String humanizeKey(String snakeKey) {
+        String[] parts = snakeKey.split("_");
+        StringBuilder sb = new StringBuilder();
+        for (String p : parts) {
+            if (p.isBlank()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1));
+        }
+        return sb.toString();
     }
 
     private String matchNumericBracket(long followers, List<String> options) {
@@ -270,10 +422,12 @@ public class FormPrefillUrlBuilder {
         if (userItems == null || userItems.isEmpty()) return List.of();
         Set<String> matched = new LinkedHashSet<>();
         for (String userItem : userItems) {
-            String uLow = userItem.toLowerCase(Locale.ROOT);
+            String uTokens = tokens(userItem);
+            if (uTokens.isBlank()) continue;
             for (String opt : options) {
-                String oLow = opt.toLowerCase(Locale.ROOT);
-                if (oLow.equals(uLow) || oLow.contains(uLow) || uLow.contains(oLow)) {
+                String oTokens = tokens(opt);
+                if (oTokens.isBlank()) continue;
+                if (oTokens.equals(uTokens) || oTokens.contains(uTokens) || uTokens.contains(oTokens)) {
                     matched.add(opt);
                 }
             }
@@ -281,17 +435,40 @@ public class FormPrefillUrlBuilder {
         return new ArrayList<>(matched);
     }
 
+    /**
+     * Word-boundary aware matching so "Female" never matches "Male".
+     * Returns the exact option text from the form, OTHER_SENTINEL when only an "Other" option fits, or null.
+     */
     private String matchSingleChoice(String value, List<String> options, boolean hasOther) {
-        String vLow = value.trim().toLowerCase(Locale.ROOT);
+        if (value == null || value.isBlank()) return null;
+
+        String trimmed = value.trim();
         for (String opt : options) {
-            if (opt.equalsIgnoreCase(value.trim())) return opt;
+            if (opt.equalsIgnoreCase(trimmed)) return opt;
         }
-        for (String opt : options) {
-            String oLow = opt.toLowerCase(Locale.ROOT);
-            if (oLow.contains(vLow) || vLow.contains(oLow)) return opt;
+
+        String vTokens = tokens(trimmed);
+        if (!vTokens.isBlank()) {
+            for (String opt : options) {
+                if (tokens(opt).equals(vTokens)) return opt;
+            }
+            String best = null;
+            int bestLen = -1;
+            for (String opt : options) {
+                String oTokens = tokens(opt);
+                if (oTokens.isBlank()) continue;
+                if (oTokens.contains(vTokens) || vTokens.contains(oTokens)) {
+                    if (oTokens.length() > bestLen) {
+                        best = opt;
+                        bestLen = oTokens.length();
+                    }
+                }
+            }
+            if (best != null) return best;
         }
+
         if (hasOther) {
-            return "__other_option__";
+            return OTHER_SENTINEL;
         }
         for (String opt : options) {
             if (opt.equalsIgnoreCase("Other") || opt.equalsIgnoreCase("Others")) return opt;
@@ -299,9 +476,21 @@ public class FormPrefillUrlBuilder {
         return null;
     }
 
+    /** Lowercased, punctuation-stripped, space-padded form used for word-boundary comparisons. */
+    private String tokens(String text) {
+        if (text == null) return "";
+        String words = text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+        return words.isEmpty() ? "" : " " + words + " ";
+    }
+
     private List<String> extractOptions(Object obj) {
         if (!(obj instanceof List<?> list)) return List.of();
-        return list.stream().filter(Objects::nonNull).map(Object::toString).map(String::trim).filter(s -> !s.isBlank()).toList();
+        return list.stream()
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList();
     }
 
     private String encodeParam(String key, String value) {

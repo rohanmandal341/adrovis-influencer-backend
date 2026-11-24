@@ -17,11 +17,26 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 @Service
 @Slf4j
 public class CreatorPrefillProfileService {
+
+    private static final int MAX_CUSTOM_FIELDS = 100;
+    private static final int MAX_CUSTOM_KEY_LENGTH = 64;
+    private static final int MAX_CUSTOM_VALUE_LENGTH = 500;
 
     private final NamedParameterJdbcTemplate securityJdbc;
     private final ObjectMapper objectMapper;
@@ -84,6 +99,7 @@ public class CreatorPrefillProfileService {
         private String followersUpdatedAt;
         private boolean followersStale;
         private Map<String, String> scalarValues;
+        private Map<String, String> customFields;
         private List<String> nichesList;
         private Map<String, String> quickCopyData;
     }
@@ -92,6 +108,7 @@ public class CreatorPrefillProfileService {
         CreatorVault vault = loadCreatorVault(jwt)
                 .orElseThrow(() -> new IllegalArgumentException("Creator account not found in security database."));
         Map<String, String> s = vault.getScalarValues();
+        Long ageValue = parseLong(s.get("age"));
         return CreatorPrefillProfileResponse.builder()
                 .fullName(vault.getFullName())
                 .email(vault.getEmail())
@@ -106,7 +123,11 @@ public class CreatorPrefillProfileService {
                 .pincode(s.getOrDefault("pincode", ""))
                 .youtubeUrl(s.getOrDefault("youtube_url", ""))
                 .portfolioUrl(s.getOrDefault("portfolio_url", ""))
+                .age(ageValue != null ? ageValue.intValue() : null)
+                .profileType(s.getOrDefault("profile_type", ""))
+                .preferredLanguage(s.getOrDefault("preferred_language", ""))
                 .niches(vault.getNichesList())
+                .customFields(vault.getCustomFields())
                 .build();
     }
 
@@ -211,6 +232,21 @@ public class CreatorPrefillProfileService {
         String shippingAddress = asString(profileMap.get("shipping_address"));
         String pincode = asString(profileMap.get("pincode"));
         String portfolioUrl = asString(profileMap.get("portfolio_url"));
+        String age = asString(profileMap.get("age"));
+        String profileType = asString(profileMap.get("profile_type"));
+        String preferredLanguage = asString(profileMap.get("preferred_language"));
+
+        // Extract all arbitrary dynamic custom_fields learned from past forms
+        Map<String, String> customFields = new LinkedHashMap<>();
+        if (profileMap.get("custom_fields") instanceof Map<?, ?> rawCustom) {
+            for (Map.Entry<?, ?> entry : rawCustom.entrySet()) {
+                String k = asString(entry.getKey());
+                String v = asString(entry.getValue());
+                if (!k.isBlank() && !v.isBlank()) {
+                    customFields.put(k, v);
+                }
+            }
+        }
 
         Long followersCount = parseLong(profileMap.get("followers_count"));
         boolean followersStale = false;
@@ -220,10 +256,14 @@ public class CreatorPrefillProfileService {
                 Instant updatedAt = OffsetDateTime.parse(updatedAtStr).toInstant();
                 followersStale = updatedAt.isBefore(Instant.now().minus(60, ChronoUnit.DAYS));
             } catch (Exception ignored) {
+                // unparseable timestamp: treat as not stale
             }
         }
 
         Map<String, String> scalar = new LinkedHashMap<>();
+        // Merge customFields first so explicit core fields always take precedence
+        scalar.putAll(customFields);
+
         putIfPresent(scalar, "full_name", fullName);
         putIfPresent(scalar, "first_name", firstName);
         putIfPresent(scalar, "last_name", lastName);
@@ -247,6 +287,9 @@ public class CreatorPrefillProfileService {
         putIfPresent(scalar, "shipping_address", shippingAddress);
         putIfPresent(scalar, "pincode", pincode);
         putIfPresent(scalar, "portfolio_url", portfolioUrl);
+        putIfPresent(scalar, "age", age);
+        putIfPresent(scalar, "profile_type", profileType);
+        putIfPresent(scalar, "preferred_language", preferredLanguage);
 
         Map<String, String> quickCopy = new LinkedHashMap<>();
         putIfPresent(quickCopy, "Full Name", fullName);
@@ -258,6 +301,9 @@ public class CreatorPrefillProfileService {
         if (followersCount != null && followersCount > 0) {
             quickCopy.put("Followers", String.valueOf(followersCount));
         }
+        putIfPresent(quickCopy, "Age", age);
+        putIfPresent(quickCopy, "Profile Type", profileType);
+        putIfPresent(quickCopy, "Language", preferredLanguage);
         putIfPresent(quickCopy, "Address", shippingAddress);
         putIfPresent(quickCopy, "Pincode", pincode);
 
@@ -272,6 +318,7 @@ public class CreatorPrefillProfileService {
                 .followersUpdatedAt(updatedAtStr)
                 .followersStale(followersStale)
                 .scalarValues(scalar)
+                .customFields(customFields)
                 .nichesList(niches)
                 .quickCopyData(quickCopy)
                 .build());
@@ -280,20 +327,15 @@ public class CreatorPrefillProfileService {
     public List<String> updateProfile(Jwt jwt, UpdateCreatorPrefillProfileRequest req) {
         CreatorVault existing = loadCreatorVault(jwt)
                 .orElseThrow(() -> new IllegalArgumentException("Creator account not found in security database."));
-        return updateProfileById(existing.getUserId(), req);
+        return updateProfileById(existing, req);
     }
 
-    public List<String> updateProfile(String principal, UpdateCreatorPrefillProfileRequest req) {
-        CreatorVault existing = loadCreatorVault(principal)
-                .orElseThrow(() -> new IllegalArgumentException("Creator account not found in security database."));
-        return updateProfileById(existing.getUserId(), req);
-    }
-
-    private List<String> updateProfileById(UUID userId, UpdateCreatorPrefillProfileRequest req) {
+    private List<String> updateProfileById(CreatorVault existing, UpdateCreatorPrefillProfileRequest req) {
         if (securityJdbc == null) {
             throw new IllegalStateException("Security database connection is not configured.");
         }
 
+        UUID userId = existing.getUserId();
         List<String> updatedFieldKeys = new ArrayList<>();
         MapSqlParameterSource userParams = new MapSqlParameterSource("id", userId);
         List<String> setClauses = new ArrayList<>();
@@ -354,9 +396,49 @@ public class CreatorPrefillProfileService {
             jsonPatch.put("portfolio_url", req.getPortfolioUrl().trim());
             updatedFieldKeys.add("portfolioUrl");
         }
+        if (req.getAge() != null && req.getAge() > 0) {
+            jsonPatch.put("age", req.getAge());
+            updatedFieldKeys.add("age");
+        }
+        if (req.getProfileType() != null && !req.getProfileType().isBlank()) {
+            jsonPatch.put("profile_type", req.getProfileType().trim());
+            updatedFieldKeys.add("profileType");
+        }
+        if (req.getPreferredLanguage() != null && !req.getPreferredLanguage().isBlank()) {
+            jsonPatch.put("preferred_language", req.getPreferredLanguage().trim());
+            updatedFieldKeys.add("preferredLanguage");
+        }
         if (req.getNiches() != null && !req.getNiches().isEmpty()) {
             jsonPatch.put("niches", req.getNiches());
             updatedFieldKeys.add("niches");
+        }
+
+        // Merge any arbitrary dynamic fields learned from forms
+        if (req.getCustomFields() != null && !req.getCustomFields().isEmpty()) {
+            Map<String, String> mergedCustom = new LinkedHashMap<>();
+            if (existing.getCustomFields() != null) {
+                mergedCustom.putAll(existing.getCustomFields());
+            }
+            boolean changed = false;
+            for (Map.Entry<String, Object> entry : req.getCustomFields().entrySet()) {
+                String cleanKey = normalizeCustomKey(entry.getKey());
+                String cleanVal = asString(entry.getValue());
+                if (cleanKey.isBlank() || cleanVal.isBlank()) {
+                    continue;
+                }
+                if (cleanVal.length() > MAX_CUSTOM_VALUE_LENGTH) {
+                    cleanVal = cleanVal.substring(0, MAX_CUSTOM_VALUE_LENGTH);
+                }
+                if (!mergedCustom.containsKey(cleanKey) && mergedCustom.size() >= MAX_CUSTOM_FIELDS) {
+                    continue;
+                }
+                mergedCustom.put(cleanKey, cleanVal);
+                updatedFieldKeys.add(cleanKey);
+                changed = true;
+            }
+            if (changed) {
+                jsonPatch.put("custom_fields", mergedCustom);
+            }
         }
 
         if (!jsonPatch.isEmpty()) {
@@ -390,10 +472,21 @@ public class CreatorPrefillProfileService {
         return updatedFieldKeys;
     }
 
+    private String normalizeCustomKey(String rawKey) {
+        String key = asString(rawKey).toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9_]", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (key.length() > MAX_CUSTOM_KEY_LENGTH) {
+            key = key.substring(0, MAX_CUSTOM_KEY_LENGTH);
+        }
+        return key;
+    }
+
     private Map<String, Object> parseJsonMap(String json) {
         if (json == null || json.isBlank()) return Collections.emptyMap();
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {});
+            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             return Collections.emptyMap();
         }
@@ -428,7 +521,8 @@ public class CreatorPrefillProfileService {
     private Long parseLong(Object o) {
         if (o == null) return null;
         try {
-            return Long.parseLong(String.valueOf(o).replaceAll("[^0-9]", ""));
+            String digitsOnly = String.valueOf(o).replaceAll("[^0-9]", "");
+            return digitsOnly.isEmpty() ? null : Long.parseLong(digitsOnly);
         } catch (Exception e) {
             return null;
         }
