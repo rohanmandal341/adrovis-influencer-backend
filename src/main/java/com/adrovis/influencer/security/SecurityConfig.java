@@ -30,6 +30,7 @@ public class SecurityConfig {
     // ADDED: logger used by unauthorized()
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("coreCorsSource") CorsConfigurationSource coreCorsSource)
             throws Exception {
@@ -78,7 +79,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/razorpay").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/create-order",
                                 "/api/v1/payments/verify", "/api/v1/newsletter/subscribe").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/account/me").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/account/me", "/api/v1/campaigns/prefill-profile").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/campaigns/prefill-profile").authenticated()
                         .requestMatchers("/api/v1/collector/**", "/api/v1/inquiries/**", "/api/v1/inquiries",
                                 "/api/v1/newsletter/subscribers", "/api/v1/analytics/**",
                                 "/api/v1/admin/**", "/api/v1/agencies", "/api/v1/agencies/**").hasRole("ADMIN")

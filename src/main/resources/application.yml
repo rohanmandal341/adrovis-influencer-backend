@@ -1,5 +1,5 @@
 server:
-  port: ${PORT:8082}
+  port: ${PORT:8080}
   servlet:
     context-path: /
 
@@ -98,3 +98,18 @@ adrovis:
 # Guest allowance is enforced by the core database, not by frontend storage.
 # Local HTTP testing needs GUEST_APPLY_COOKIE_SECURE=false; keep true in production.
 # With cross-site frontend/API hosting, None requires Secure and browser third-party cookie support.
+
+# Security Database (adrovis_security Supabase/PostgreSQL for Creator Auto-Fill Profile)
+security:
+  datasource:
+    url: ${SECURITY_DB_URL:}
+    username: ${SECURITY_DB_USERNAME:}
+    password: ${SECURITY_DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: BrandCollabzSecurityPool
+      maximum-pool-size: 2
+      minimum-idle: 1
+      idle-timeout: 20000
+      max-lifetime: 300000
+      connection-timeout: 15000
